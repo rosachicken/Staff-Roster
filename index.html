@@ -1,0 +1,1198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rescue Ops: Wildfire - Staff Admin</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM -->
+    <script type="importmap">
+        {
+            "imports": {
+                "react": "https://esm.sh/react@18.2.0",
+                "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+                "lucide-react": "https://esm.sh/lucide-react@0.309.0"
+            }
+        }
+    </script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone@7.23.6/babel.min.js"></script>
+
+    <style>
+        body { background-color: #111827; color: #f3f4f6; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1f2937; }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+        .animate-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .markdown-prose ul { list-style-type: disc; margin-left: 1.5em; margin-top: 0.5em; }
+        .markdown-prose p { margin-bottom: 0.5em; }
+        
+        /* Map Grid Pattern */
+        .bg-grid-pattern {
+            background-image: linear-gradient(to right, #374151 1px, transparent 1px),
+                              linear-gradient(to bottom, #374151 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module" data-presets="react">
+        import React, { useState, useEffect, useMemo, useRef } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { 
+            Users, Search, Filter, UserPlus, Shield, ShieldAlert, Clock, 
+            Copy, MoreVertical, Check, X, Menu, FileText, AlertTriangle, 
+            Gavel, Languages, Calendar, ChevronRight, BarChart3, Settings,
+            LogOut, Save, RefreshCw, AlertCircle, Edit2, AlertOctagon,
+            Power, Activity, Sparkles, Loader2, MessageSquare, Ticket,
+            Archive, Globe, MapPin, Briefcase, Download, Upload, Database,
+            BookOpen, Mail, Key, Bot, Plane, History, CalendarDays, Monitor,
+            ClipboardCheck, Award, TrendingUp, Trophy, RotateCcw, Trash2
+        } from 'lucide-react';
+
+        // --- CONSTANTS & CONFIG ---
+        const LOCAL_STORAGE_KEY = 'rescue_ops_staff_data_v2';
+        const API_KEY_STORAGE_KEY = 'rescue_ops_gemini_api_key';
+        const DEFAULT_API_KEY = "AIzaSyDxUyS3rpzeBAADqy4m89YmCY52hItL1eA"; // Pre-loaded Key
+
+        // Weekly Quotas for Automation
+        const QUOTA = {
+            TICKETS: 10,
+            MESSAGES: 300
+        };
+
+        const ROLE_HIERARCHY = {
+            'Community Manager': 0,
+            'Staff Manager': 1,
+            'Head of Moderation': 2,
+            'Moderator': 3,
+            'Trial Moderator': 4,
+        };
+
+        const ROLE_COLORS = {
+            'Community Manager': 'text-red-400',
+            'Staff Manager': 'text-purple-400',
+            'Head of Moderation': 'text-blue-400',
+            'Moderator': 'text-green-400',
+            'Trial Moderator': 'text-yellow-400',
+        };
+
+        const ROLE_HEX_COLORS = {
+            'Community Manager': 'f87171',
+            'Staff Manager': 'c084fc',
+            'Head of Moderation': '60a5fa',
+            'Moderator': '4ade80',
+            'Trial Moderator': 'facc15',
+        };
+
+        const HANDBOOK_RULES = [
+            { code: "5.1", title: "Professional Conduct", desc: "Staff must maintain professionalism in all public and private interactions." },
+            { code: "5.2", title: "Respect & Harassment", desc: "Zero tolerance for harassment or disrespect towards players or staff." },
+            { code: "8.1", title: "Inactivity / Ghosting", desc: "Failure to meet weekly activity requirements without approved LOA." },
+            { code: "9.3", title: "Confidentiality Violation", desc: "Leaking internal staff discussions or ticket contents." },
+            { code: "4.2", title: "Abuse of Authority", desc: "Using powers for personal gain or retribution." },
+            { code: "6.1", title: "Bias / Partiality", desc: "Showing favoritism in moderation decisions." },
+            { code: "10.2", title: "Failure to Follow Protocol", desc: "Skipping required steps in ticketing or banning procedures." }
+        ];
+
+        const STRIKE_EXPIRY_DAYS = {
+            1: 30,
+            2: 60,
+            3: 90
+        };
+
+        // --- MESSAGE TEMPLATES DATA ---
+        const MESSAGE_TEMPLATES = {
+            "POSITIVE & RECOGNITION": [
+                { title: "Promotion: Trial Moderator to Moderator", content: "Hi {{name}},\nI am happy to inform you that you have successfully passed your 14-day Trial Moderator period! Your performance has been solid, and we appreciate your dedication to the team.\nI have updated your roles. You now have full Moderator permissions, including Ban and Kick authority. Please continue to use them responsibly.\n~ rosachicken_" },
+                { title: "Promotion: Moderator to Head of Moderation", content: "Hi {{name}},\nDue to your exceptional leadership and consistent reliability, we are promoting you to Head of Moderation. We believe you are the right person to lead the moderation operations for your language scope.\nLet's chat soon about your new responsibilities regarding staff supervision and escalation handling.\n~ rosachicken_" },
+                { title: "Trial Passed (General Confirmation)", content: "Congratulations {{name}},\nYou have officially passed your trial period! We are happy to welcome you as a permanent member of the Rescue Ops: Wildfire staff team.\nThank you for your patience and hard work during your evaluation.\n~ rosachicken_" },
+                { title: "General Kudos / Praise", content: "Hey {{name}},\nI just wanted to reach out and say thank you for your hard work recently. I noticed how you handled those difficult tickets, and your professionalism was spot on. We appreciate having you here helping us protect the community.\n~ rosachicken_" },
+                { title: "High Activity Recognition", content: "Hi {{name}},\nYour activity levels this week have been outstanding! Thank you for stepping up and covering so much ground in the chats. It doesn't go unnoticed.\n~ rosachicken_" },
+                { title: "1-Year Anniversary", content: "Happy Anniversary {{name}}! 🎉\nIt's been a whole year since you joined the staff team. Thank you for sticking with us and for all your contributions to the Rescue Ops: Wildfire project.\n~ rosachicken_" }
+            ],
+            "DISCIPLINARY & ENFORCEMENT": [
+                { title: "Activity Warning (Soft)", content: "Hi {{name}},\nI noticed your activity has dropped a bit recently. Is everything okay?\nPlease remember that we expect visible presence. If you cannot be active, please ensure you request a Leave of Absence to avoid receiving a strike.\n~ rosachicken_" },
+                { title: "Strike 1 (Minor Infraction)", content: "Hello {{name}},\nThis message is to inform you that you have been issued a Strike 1 (Minor). This is due to a violation of the Staff Handbook regarding professional conduct.\nThis serves as a formal warning. Please review the handbook to avoid further escalation.\n~ rosachicken_" },
+                { title: "Strike 2 (Major Infraction)", content: "Hello {{name}},\nYou have been issued a Strike 2 (Major). Repeated violations or serious lapses in judgment affect the team's integrity.\nWe need to see an immediate improvement. Please be aware that a third strike will result in termination.\n~ rosachicken_" },
+                { title: "Strike 3 (Termination)", content: "Hello {{name}},\nDue to reaching Strike 3, we are effectively removing you from the Rescue Ops: Wildfire staff team. We thank you for your time, but we must uphold our standards.\nYour roles have been removed. Please remember that your confidentiality obligations remain in effect.\n~ rosachicken_" },
+                { title: "Immediate Removal (Critical Breach)", content: "{{name}},\nDue to a critical breach of the Staff Handbook (Confidentiality/Abuse of Authority), you are being removed from the staff team immediately.\nThis decision is final and effective immediately.\n~ rosachicken_" },
+                { title: "Demotion: Inactivity", content: "Hi {{name}},\nDue to consistent inactivity, we are adjusting your role. We hope this lower pressure allows you to contribute when you can, but we need active leadership in your previous position.\n~ rosachicken_" },
+                { title: "Demotion: Performance", content: "Hi {{name}},\nWe have decided to adjust your role back to a previous rank. This is to give you more time to focus on the basics of moderation without the added pressure of your current position.\n~ rosachicken_" },
+                { title: "Handbook Violation (Tone)", content: "Hey {{name}},\nI need to speak to you about your tone in public channels. As staff, we must remain professional even when provoked. Sarcasm or hostility is not permitted.\nPlease keep cool and disengage if things get heated.\n~ rosachicken_" },
+                { title: "Ticket Handling Error", content: "Hi {{name}},\nI noticed an error in how you handled ticket #{{ticket_id}}. Please ensure you follow the standard escalation procedure outlined in Section 6.2 of the handbook next time.\n~ rosachicken_" }
+            ],
+            "ADMINISTRATIVE": [
+                { title: "Trial Extension", content: "Hi {{name}},\nWe've decided to extend your Trial Moderator period. We see potential, but we want to see a bit more consistency and rule familiarity before making it official.\nWe will review your status again in one week.\n~ rosachicken_" },
+                { title: "LOA Approved", content: "Hi {{name}},\nYour Leave of Absence (LOA) request has been approved. Enjoy your time off!\nYour roles will remain, but you are exempt from activity requirements until your return date.\n~ rosachicken_" },
+                { title: "LOA Denied", content: "Hi {{name}},\nI cannot approve your LOA request at this time, as it exceeds the standard one-month duration limit.\nPlease ping me so we can discuss alternative options.\n~ rosachicken_" },
+                { title: "Return from LOA Check-in", content: "Welcome back {{name}}!\nJust checking in as your LOA has officially ended. Are you ready to resume full duties this week? Please let us know so we can mark you as Active again.\n~ rosachicken_" },
+                { title: "Resignation Acceptance", content: "Hi {{name}},\nI have received your resignation. We are sorry to see you go, but we understand. Thank you for all your help!\nYou are welcome to re-apply in the future if things change (after the standard 2-week cooldown).\n~ rosachicken_" }
+            ]
+        };
+
+        // --- GLOBAL TIMEZONES DATA ---
+        const GLOBAL_TIMEZONES = [
+            // Americas
+            { country: "United States", zone: "EST (New York)", offset: -5, code: "US" },
+            { country: "United States", zone: "PST (Los Angeles)", offset: -8, code: "US" },
+            { country: "United States", zone: "CST (Chicago)", offset: -6, code: "US" },
+            { country: "Canada", zone: "EST (Toronto)", offset: -5, code: "CA" },
+            { country: "Brazil", zone: "BRT (Sao Paulo)", offset: -3, code: "BR" },
+            { country: "Argentina", zone: "ART (Buenos Aires)", offset: -3, code: "AR" },
+            { country: "Mexico", zone: "CST (Mexico City)", offset: -6, code: "MX" },
+            // Europe / Africa / Middle East
+            { country: "United Kingdom", zone: "GMT (London)", offset: 0, code: "GB" },
+            { country: "Germany", zone: "CET (Berlin)", offset: 1, code: "DE" },
+            { country: "France", zone: "CET (Paris)", offset: 1, code: "FR" },
+            { country: "Ukraine", zone: "EET (Kyiv)", offset: 2, code: "UA" },
+            { country: "Russia", zone: "MSK (Moscow)", offset: 3, code: "RU" },
+            { country: "Turkey", zone: "TRT (Istanbul)", offset: 3, code: "TR" },
+            { country: "Egypt", zone: "EET (Cairo)", offset: 2, code: "EG" },
+            { country: "South Africa", zone: "SAST (Johannesburg)", offset: 2, code: "ZA" },
+            { country: "Saudi Arabia", zone: "AST (Riyadh)", offset: 3, code: "SA" },
+            { country: "UAE", zone: "GST (Dubai)", offset: 4, code: "AE" },
+            // Asia
+            { country: "India", zone: "IST (New Delhi)", offset: 5.5, code: "IN" },
+            { country: "Pakistan", zone: "PKT (Karachi)", offset: 5, code: "PK" },
+            { country: "China", zone: "CST (Beijing)", offset: 8, code: "CN" },
+            { country: "Japan", zone: "JST (Tokyo)", offset: 9, code: "JP" },
+            { country: "South Korea", zone: "KST (Seoul)", offset: 9, code: "KR" },
+            { country: "Singapore", zone: "SGT (Singapore)", offset: 8, code: "SG" },
+            { country: "Indonesia", zone: "WIB (Jakarta)", offset: 7, code: "ID" },
+            { country: "Vietnam", zone: "ICT (Hanoi)", offset: 7, code: "VN" },
+            { country: "Thailand", zone: "ICT (Bangkok)", offset: 7, code: "TH" },
+            { country: "Philippines", zone: "PHT (Manila)", offset: 8, code: "PH" },
+            // Oceania
+            { country: "Australia", zone: "AEST (Sydney)", offset: 11, code: "AU" },
+            { country: "New Zealand", zone: "NZDT (Auckland)", offset: 13, code: "NZ" },
+        ];
+
+        // --- API & HELPER FUNCTIONS ---
+
+        async function callGemini(prompt) {
+            const apiKey = localStorage.getItem(API_KEY_STORAGE_KEY) || DEFAULT_API_KEY;
+            try {
+                const response = await fetch(
+                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{ parts: [{ text: prompt }] }]
+                        })
+                    }
+                );
+
+                if (!response.ok) throw new Error(`API Error: ${response.status}`);
+                const data = await response.json();
+                const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated.";
+                return text.replace(/\*/g, '');
+            } catch (error) {
+                console.error("Gemini API call failed", error);
+                return "Error generating content. Check your API Key or connection.";
+            }
+        }
+
+        const formatDate = (isoString) => {
+            if (!isoString) return '';
+            if (typeof isoString === 'string' && isoString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                const [year, month, day] = isoString.split('-');
+                return `${day}.${month}.${year}`;
+            }
+            try {
+                const d = new Date(isoString);
+                const day = String(d.getDate()).padStart(2, '0');
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                const year = d.getFullYear();
+                return `${day}.${month}.${year}`;
+            } catch (e) {
+                return isoString;
+            }
+        };
+
+        const getAvatarUrl = (name, role) => {
+            const seed = encodeURIComponent(name);
+            const color = ROLE_HEX_COLORS[role] || '9ca3af';
+            return `https://api.dicebear.com/7.x/bottts/svg?seed=${seed}&baseColor=${color}`;
+        };
+
+        const calculateTimeInService = (startDate) => {
+            const start = new Date(startDate);
+            const now = new Date();
+            const diffTime = Math.abs(now.getTime() - start.getTime());
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            return { years: Math.floor(diffDays / 365), months: Math.floor((diffDays % 365) / 30), days: (diffDays % 365) % 30, totalDays: diffDays };
+        };
+
+        const getStatusColor = (status, strikes) => {
+            if (status === 'Alumni') return 'bg-gray-800 text-gray-400 border-gray-600';
+            if (strikes >= 3) return 'bg-red-900/50 text-red-200 border-red-700';
+            switch (status) {
+                case 'Active': return 'bg-green-900/30 text-green-300 border-green-800';
+                case 'Trial': return 'bg-yellow-900/30 text-yellow-300 border-yellow-800';
+                case 'LOA': return 'bg-blue-900/30 text-blue-300 border-blue-800';
+                case 'Inactive': return 'bg-gray-700 text-gray-300 border-gray-600';
+                default: return 'bg-gray-700 text-gray-300';
+            }
+        };
+
+        const getRegionFromTimezone = (tz, country) => {
+            const t = (tz || '').toUpperCase();
+            const c = (country || '').toUpperCase();
+            if (['AUSTRALIA', 'NEW ZEALAND', 'FIJI', 'SAMOA', 'PAPUA NEW GUINEA'].some(x => c.includes(x)) || 
+                ['SYDNEY', 'MELBOURNE', 'BRISBANE', 'PERTH', 'ADELAIDE', 'DARWIN', 'HOBART', 'CANBERRA', 'AUCKLAND', 'WELLINGTON', 'CHRISTCHURCH'].some(x => t.includes(x)) ||
+                ['AEST', 'AEDT', 'ACST', 'ACDT', 'AWST', 'NZST', 'NZDT'].some(x => t.includes(x))) return 'Oceania';
+            if (['CHINA', 'JAPAN', 'KOREA', 'INDIA', 'SINGAPORE', 'PHILIPPINES', 'INDONESIA', 'VIETNAM', 'THAILAND', 'PAKISTAN', 'UAE', 'SAUDI ARABIA', 'RUSSIA', 'HONG KONG'].some(x => c.includes(x)) || 
+                ['ASIA', 'BEIJING', 'SHANGHAI', 'TOKYO', 'SEOUL', 'DELHI', 'DUBAI'].some(x => t.includes(x))) return 'APAC';
+            if (['UK', 'UNITED KINGDOM', 'GERMANY', 'FRANCE', 'SPAIN', 'ITALY', 'NETHERLANDS', 'POLAND', 'UKRAINE', 'TURKEY', 'EGYPT', 'SOUTH AFRICA', 'IRELAND', 'SWEDEN', 'NORWAY'].some(x => c.includes(x)) || 
+                ['EUROPE', 'AFRICA', 'LONDON', 'BERLIN', 'PARIS', 'CAIRO', 'JOHANNESBURG'].some(x => t.includes(x))) return 'EMEA';
+            if (['US', 'USA', 'UNITED STATES', 'CANADA', 'BRAZIL', 'MEXICO', 'ARGENTINA', 'CHILE', 'COLOMBIA'].some(x => c.includes(x)) ||
+                ['AMERICA', 'NEW YORK', 'CHICAGO', 'LOS ANGELES', 'TORONTO', 'SAO PAULO'].some(x => t.includes(x))) return 'Americas';
+            if (['EST', 'PST', 'MST', 'EDT', 'CDT', 'PDT', 'MDT', 'GMT-5', 'GMT-6', 'GMT-7', 'GMT-8'].some(x => t.includes(x))) return 'Americas';
+            if (t.includes('CST') && !t.includes('CHINA')) return 'Americas';
+            if (['CET', 'BST', 'CEST', 'EET', 'WEST', 'SAST', 'TRT'].some(x => t.includes(x))) return 'EMEA';
+            if (t.includes('GMT')) {
+                if (t.includes('GMT+8') || t.includes('GMT+9') || t.includes('GMT+7') || t.includes('GMT+10') || t.includes('GMT+11')) return 'APAC';
+                if (t.includes('GMT-')) return 'Americas';
+                return 'EMEA';
+            }
+            if (['JST', 'AEST', 'IST', 'HKT', 'PKT', 'KST', 'WIB', 'ICT', 'PHT'].some(x => t.includes(x))) return 'APAC';
+            return 'Unknown';
+        };
+
+        const calcTime = (offset) => {
+            const d = new Date();
+            const utc = d.getTime() + (d.getTimezoneOffset() * 60000);
+            const nd = new Date(utc + (3600000 * offset));
+            return nd.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        };
+
+        const copyToClipboard = (text) => {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed";
+            textArea.style.left = "0";
+            textArea.style.top = "0";
+            textArea.style.opacity = "0";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            try {
+                const successful = document.execCommand('copy');
+                if(successful) alert("Message copied to clipboard!");
+            } catch (err) { window.prompt("Copy to clipboard: Ctrl+C, Enter", text); }
+            document.body.removeChild(textArea);
+        };
+
+        // --- INITIAL DATA ---
+        const INITIAL_STAFF = [
+            { id: '1', name: 'Exkee_Official', discordId: 'dev_001', role: 'Community Manager', language: 'Bilingual', status: 'Active', avatarUrl: getAvatarUrl('Exkee_Official', 'Community Manager'), joinedDate: '2023-01-01', lastActiveDate: new Date().toISOString().split('T')[0], strikes: 0, strikeHistory: [], isOnLoa: false, country: 'France', timezone: 'CET', weeklyTickets: 5, weeklyMessages: 150, totalTickets: 1205, totalMessages: 25000, notes: [] },
+            { id: '2', name: 'Ops_Lead', discordId: 'sm_001', role: 'Staff Manager', language: 'Bilingual', status: 'Active', avatarUrl: getAvatarUrl('Ops_Lead', 'Staff Manager'), joinedDate: '2023-02-15', lastActiveDate: new Date().toISOString().split('T')[0], strikes: 0, strikeHistory: [], isOnLoa: false, country: 'United Kingdom', timezone: 'GMT', weeklyTickets: 12, weeklyMessages: 340, totalTickets: 890, totalMessages: 12400, notes: [] },
+            { id: '3', name: 'Viper_Mod', discordId: 'mod_003', role: 'Head of Moderation', language: 'English', status: 'Active', avatarUrl: getAvatarUrl('Viper_Mod', 'Head of Moderation'), joinedDate: '2023-05-10', lastActiveDate: new Date().toISOString().split('T')[0], strikes: 0, strikeHistory: [], isOnLoa: false, country: 'United States', timezone: 'EST (New York)', weeklyTickets: 25, weeklyMessages: 800, totalTickets: 650, totalMessages: 8900, notes: [] },
+            { id: '4', name: 'Newbie_Dave', discordId: 'trial_004', role: 'Trial Moderator', language: 'English', status: 'Trial', avatarUrl: getAvatarUrl('Newbie_Dave', 'Trial Moderator'), joinedDate: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], lastActiveDate: new Date().toISOString().split('T')[0], strikes: 0, strikeHistory: [], isOnLoa: false, country: 'United States', timezone: 'PST (Los Angeles)', weeklyTickets: 8, weeklyMessages: 250, totalTickets: 20, totalMessages: 600, notes: [] },
+            { id: '5', name: 'Berlin_Wall', discordId: 'mod_005', role: 'Moderator', language: 'German/English', status: 'Active', avatarUrl: getAvatarUrl('Berlin_Wall', 'Moderator'), joinedDate: '2023-08-20', lastActiveDate: new Date().toISOString().split('T')[0], strikes: 0, strikeHistory: [], isOnLoa: false, country: 'Germany', timezone: 'CET (Berlin)', weeklyTickets: 15, weeklyMessages: 400, totalTickets: 300, totalMessages: 4500, notes: [] },
+            { id: '6', name: 'Sleepy_Gary', discordId: 'mod_006', role: 'Moderator', language: 'English', status: 'LOA', avatarUrl: getAvatarUrl('Sleepy_Gary', 'Moderator'), joinedDate: '2023-06-01', lastActiveDate: '2023-10-01', strikes: 0, strikeHistory: [], isOnLoa: true, loaReturnDate: '2023-12-01', country: 'Canada', timezone: 'EST (Toronto)', weeklyTickets: 0, weeklyMessages: 0, totalTickets: 150, totalMessages: 2200, notes: [] },
+            { id: '7', name: 'Rio_Ranger', discordId: 'mod_007', role: 'Moderator', language: 'Portuguese/English', status: 'Active', avatarUrl: getAvatarUrl('Rio_Ranger', 'Moderator'), joinedDate: '2023-09-15', lastActiveDate: new Date().toISOString().split('T')[0], strikes: 2, strikeHistory: [{date: '2023-10-01', level: 2, reason: 'Abuse of power', active: true, expiryDate: '2024-01-01'}], isOnLoa: false, country: 'Brazil', timezone: 'BRT (Sao Paulo)', weeklyTickets: 11, weeklyMessages: 310, totalTickets: 80, totalMessages: 1100, notes: [] },
+            { id: '8', name: 'Aussie_Mate', discordId: 'head_008', role: 'Head of Moderation', language: 'English', status: 'Active', avatarUrl: getAvatarUrl('Aussie_Mate', 'Head of Moderation'), joinedDate: '2023-03-10', lastActiveDate: new Date().toISOString().split('T')[0], strikes: 0, strikeHistory: [], isOnLoa: false, country: 'Australia', timezone: 'AEST (Sydney)', weeklyTickets: 30, weeklyMessages: 600, totalTickets: 900, totalMessages: 15000, notes: [] },
+            { id: '9', name: 'Kiwi_Pilot', discordId: 'trial_009', role: 'Trial Moderator', language: 'English', status: 'Trial', avatarUrl: getAvatarUrl('Kiwi_Pilot', 'Trial Moderator'), joinedDate: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], lastActiveDate: new Date().toISOString().split('T')[0], strikes: 0, strikeHistory: [], isOnLoa: false, country: 'New Zealand', timezone: 'NZDT (Auckland)', weeklyTickets: 20, weeklyMessages: 500, totalTickets: 40, totalMessages: 800, notes: [] },
+            { id: '10', name: 'Tokyo_Ghoul', discordId: 'mod_010', role: 'Moderator', language: 'Japanese/English', status: 'Inactive', avatarUrl: getAvatarUrl('Tokyo_Ghoul', 'Moderator'), joinedDate: '2023-07-07', lastActiveDate: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], strikes: 0, strikeHistory: [], isOnLoa: false, country: 'Japan', timezone: 'JST (Tokyo)', weeklyTickets: 0, weeklyMessages: 0, totalTickets: 200, totalMessages: 3000, notes: [] },
+            { id: '11', name: 'Dubai_Prince', discordId: 'mod_011', role: 'Moderator', language: 'Arabic/English', status: 'Active', avatarUrl: getAvatarUrl('Dubai_Prince', 'Moderator'), joinedDate: '2023-11-01', lastActiveDate: new Date().toISOString().split('T')[0], strikes: 0, strikeHistory: [], isOnLoa: false, country: 'UAE', timezone: 'GST (Dubai)', weeklyTickets: 10, weeklyMessages: 305, totalTickets: 50, totalMessages: 700, notes: [] },
+            { id: '12', name: 'Seoul_Surfer', discordId: 'mod_012', role: 'Moderator', language: 'Korean/English', status: 'Active', avatarUrl: getAvatarUrl('Seoul_Surfer', 'Moderator'), joinedDate: '2023-10-10', lastActiveDate: new Date().toISOString().split('T')[0], strikes: 1, strikeHistory: [{date: '2023-11-01', level: 1, reason: 'Missed meeting', active: true, expiryDate: '2023-12-01'}], isOnLoa: false, country: 'South Korea', timezone: 'KST (Seoul)', weeklyTickets: 5, weeklyMessages: 100, totalTickets: 20, totalMessages: 300, notes: [] },
+            { id: '13', name: 'Tech_Support', discordId: 'sm_013', role: 'Staff Manager', language: 'Hindi/English', status: 'Active', avatarUrl: getAvatarUrl('Tech_Support', 'Staff Manager'), joinedDate: '2023-04-01', lastActiveDate: new Date().toISOString().split('T')[0], strikes: 0, strikeHistory: [], isOnLoa: false, country: 'India', timezone: 'IST (New Delhi)', weeklyTickets: 40, weeklyMessages: 900, totalTickets: 1500, totalMessages: 20000, notes: [] },
+            { id: '14', name: 'Safari_Joe', discordId: 'mod_014', role: 'Moderator', language: 'English', status: 'Active', avatarUrl: getAvatarUrl('Safari_Joe', 'Moderator'), joinedDate: '2023-09-01', lastActiveDate: new Date().toISOString().split('T')[0], strikes: 0, strikeHistory: [], isOnLoa: false, country: 'South Africa', timezone: 'SAST (Johannesburg)', weeklyTickets: 12, weeklyMessages: 350, totalTickets: 180, totalMessages: 4000, notes: [] },
+            { id: '15', name: 'Late_Night_Owl', discordId: 'trial_015', role: 'Trial Moderator', language: 'English', status: 'Trial', avatarUrl: getAvatarUrl('Late_Night_Owl', 'Trial Moderator'), joinedDate: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], lastActiveDate: new Date().toISOString().split('T')[0], strikes: 0, strikeHistory: [], isOnLoa: false, country: 'United States', timezone: 'CST (Chicago)', weeklyTickets: 15, weeklyMessages: 400, totalTickets: 30, totalMessages: 700, notes: [] }
+        ];
+
+        // --- SUB-COMPONENTS ---
+        const Input = ({ label, onChange, required, value, type = 'text' }) => (
+            <div>
+                <label className="block text-gray-400 text-xs mb-1">{label} {required && '*'}</label>
+                <input required={required} type={type} value={value || ''} onChange={e => onChange(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white text-sm focus:border-blue-500 focus:outline-none" />
+            </div>
+        );
+
+        const TemplatesView = ({ staff }) => {
+            const [category, setCategory] = useState("POSITIVE & RECOGNITION");
+            const [selectedTemplateIndex, setSelectedTemplateIndex] = useState(0);
+            const [selectedStaffId, setSelectedStaffId] = useState("");
+            const [ticketId, setTicketId] = useState("");
+            const [copied, setCopied] = useState(false);
+
+            const activeStaff = useMemo(() => {
+                if (!staff) return [];
+                return staff.filter(s => s.status !== 'Alumni').sort((a,b) => (a.name || "").localeCompare(b.name || ""));
+            }, [staff]);
+            
+            const categoryTemplates = MESSAGE_TEMPLATES[category] || [];
+            const template = categoryTemplates[selectedTemplateIndex];
+
+            const generatedMessage = useMemo(() => {
+                if (!template) return "";
+                let msg = template.content;
+                
+                const staffMember = staff.find(s => s.id === selectedStaffId);
+                const name = staffMember ? staffMember.name : "[Staff Name]";
+                
+                msg = msg.replace(/{{name}}/g, name);
+                msg = msg.replace(/{{ticket_id}}/g, ticketId || "[Ticket ID]");
+                
+                return msg;
+            }, [category, selectedTemplateIndex, selectedStaffId, ticketId, staff, template]);
+
+            const handleCopy = () => {
+                copyToClipboard(generatedMessage);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+            };
+
+            return (
+                <div className="flex h-full gap-6">
+                    {/* Controls */}
+                    <div className="w-1/3 bg-gray-800 rounded-lg border border-gray-700 flex flex-col overflow-hidden">
+                        <div className="p-4 border-b border-gray-700 bg-gray-900/50">
+                            <h2 className="text-lg font-bold text-white flex items-center gap-2"><MessageSquare size={20} className="text-blue-400"/> Template Selector</h2>
+                        </div>
+                        <div className="p-6 space-y-6 flex-1 overflow-y-auto">
+                            <div>
+                                <label className="block text-gray-400 text-xs font-bold uppercase mb-2">1. Category</label>
+                                <select 
+                                    className="w-full bg-gray-900 border border-gray-600 rounded-lg p-2 text-white text-sm focus:border-blue-500 outline-none"
+                                    value={category}
+                                    onChange={(e) => { setCategory(e.target.value); setSelectedTemplateIndex(0); }}
+                                >
+                                    {Object.keys(MESSAGE_TEMPLATES).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                </select>
+                            </div>
+                            
+                            <div>
+                                <label className="block text-gray-400 text-xs font-bold uppercase mb-2">2. Template</label>
+                                <div className="space-y-1">
+                                    {(MESSAGE_TEMPLATES[category] || []).map((t, idx) => (
+                                        <button
+                                            key={idx}
+                                            onClick={() => setSelectedTemplateIndex(idx)}
+                                            className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${selectedTemplateIndex === idx ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-400 hover:bg-gray-700'}`}
+                                        >
+                                            {t.title}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="pt-4 border-t border-gray-700">
+                                <label className="block text-gray-400 text-xs font-bold uppercase mb-2">3. Fill Details</label>
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="text-xs text-gray-500 block mb-1">Staff Member</label>
+                                        <select 
+                                            className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white text-sm"
+                                            value={selectedStaffId}
+                                            onChange={(e) => setSelectedStaffId(e.target.value)}
+                                        >
+                                            <option value="">-- Select Staff --</option>
+                                            {activeStaff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                        </select>
+                                    </div>
+                                    {template && template.content.includes("{{ticket_id}}") && (
+                                        <div>
+                                            <label className="text-xs text-gray-500 block mb-1">Ticket ID</label>
+                                            <input 
+                                                type="text" 
+                                                className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white text-sm"
+                                                placeholder="e.g. 12345"
+                                                value={ticketId}
+                                                onChange={(e) => setTicketId(e.target.value)}
+                                            />
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Preview */}
+                    <div className="flex-1 bg-gray-800 rounded-lg border border-gray-700 flex flex-col overflow-hidden">
+                        <div className="p-4 border-b border-gray-700 bg-gray-900/50 flex justify-between items-center">
+                            <h2 className="text-lg font-bold text-white flex items-center gap-2"><FileText size={20} className="text-green-400"/> Message Preview</h2>
+                            <span className="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded border border-gray-600">Discord Ready</span>
+                        </div>
+                        <div className="flex-1 p-6 bg-gray-900">
+                            <textarea 
+                                className="w-full h-full bg-transparent text-gray-300 font-mono text-sm focus:outline-none resize-none"
+                                value={generatedMessage}
+                                readOnly
+                            />
+                        </div>
+                        <div className="p-4 border-t border-gray-700 bg-gray-800 flex justify-end">
+                             <button 
+                                onClick={handleCopy}
+                                className={`px-6 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${copied ? 'bg-green-600 text-white' : 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-900/20'}`}
+                            >
+                                {copied ? <Check size={18}/> : <Copy size={18}/>} 
+                                {copied ? 'Copied!' : 'Copy to Clipboard'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const StatCard = ({ label, value, icon, alert, onClick }) => (
+            <div onClick={onClick} className={`bg-gray-800 p-4 rounded-lg border ${alert ? 'border-red-500 animate-pulse' : 'border-gray-700'} flex items-center justify-between ${onClick ? 'cursor-pointer hover:bg-gray-700 transition-colors shadow-lg hover:shadow-xl' : ''}`}>
+                <div><p className="text-gray-400 text-xs uppercase font-bold tracking-wider">{label}</p><p className="text-3xl font-bold text-white mt-1">{value}</p></div>
+                <div className={`p-3 rounded-lg ${alert ? 'bg-red-900/20' : 'bg-gray-700/30'}`}>{icon}</div>
+            </div>
+        );
+
+        const CoverageBar = ({ label, count, total, color }) => {
+            const percent = total > 0 ? (count / total) * 100 : 0;
+            return (
+                <div>
+                    <div className="flex justify-between text-xs mb-1"><span className="text-gray-300 font-bold">{label}</span><span className="text-gray-500">{count} staff ({Math.round(percent)}%)</span></div>
+                    <div className="w-full bg-gray-900 rounded-full h-2"><div className={`h-2 rounded-full ${color}`} style={{ width: `${percent}%` }}></div></div>
+                </div>
+            );
+        };
+
+        const ProfileView = ({ selectedStaff, updateStaff, archiveStaff, deleteStaff }) => {
+            if (!selectedStaff) return null;
+            const [editMode, setEditMode] = useState(false);
+            const [editFormData, setEditFormData] = useState(null);
+            const [showStrikeModal, setShowStrikeModal] = useState(false);
+            const [showOffboardModal, setShowOffboardModal] = useState(false);
+            const [showLoaModal, setShowLoaModal] = useState(false);
+            const [showStatsModal, setShowStatsModal] = useState(false);
+            const [noteText, setNoteText] = useState("");
+            const [loaDate, setLoaDate] = useState("");
+            const [statsUpdate, setStatsUpdate] = useState({ tickets: 0, messages: 0 });
+            const [sLevel, setSLevel] = useState(1);
+            const [sReason, setSReason] = useState("");
+            const [sGenerating, setSGenerating] = useState(false);
+            const [exitReason, setExitReason] = useState('Resigned');
+            const [rehire, setRehire] = useState(true);
+            const [showNotifModal, setShowNotifModal] = useState(false);
+            const [notifContent, setNotifContent] = useState("");
+            const [notifType, setNotifType] = useState("generic");
+            const [summary, setSummary] = useState('');
+            const [sumLoading, setSumLoading] = useState(false);
+
+            const timeline = useMemo(() => {
+                const rawEvents = [];
+                rawEvents.push({ rawDate: selectedStaff.joinedDate, type: 'joined', content: `Joined as ${selectedStaff.role}`, icon: <UserPlus size={14}/>, color: 'text-green-400', border: 'border-green-800' });
+                (selectedStaff.notes || []).forEach(n => rawEvents.push({ rawDate: n.date, type: 'note', content: n.content, sub: n.author, icon: <FileText size={14}/>, color: 'text-blue-400', border: 'border-blue-800' }));
+                (selectedStaff.strikeHistory || []).forEach(s => rawEvents.push({ rawDate: s.date, type: 'strike', content: `Strike Lvl ${s.level}: ${s.reason}`, sub: `Expires: ${formatDate(s.expiryDate)}`, icon: <Gavel size={14}/>, color: 'text-red-400', border: 'border-red-800' }));
+                return rawEvents.sort((a,b) => new Date(b.rawDate) - new Date(a.rawDate)).map(e => ({...e, date: formatDate(e.rawDate)}));
+            }, [selectedStaff]);
+
+            const handleCopyDM = async (type) => {
+                setSGenerating(true);
+                setNotifType(type);
+                let prompt = `Write a professional Discord DM from the "Rescue Ops: Wildfire" Staff Manager to staff member "${selectedStaff.name}". `;
+                
+                if (type === 'strike') prompt += `Subject: Strike Notification (Level ${sLevel}). Reason: ${sReason}. Explain this is a formal warning.`;
+                else if (type === 'review') prompt += `Subject: Performance Review. Stats: ${selectedStaff.weeklyTickets} tickets, ${selectedStaff.weeklyMessages} messages. Do NOT mention scheduling a voice meeting.`;
+                else if (type === 'promotion') prompt = `Write a celebratory and professional Discord DM to "${selectedStaff.name}". Start by congratulating them on successfully passing their 14-day Trial Moderator period. Inform them they have been officially promoted to the rank of "Moderator". Additional Info: Let them know they now have access to advanced moderation commands (Ban/Kick) and the internal #staff-voting channel. Thank them for their hard work. Sign off exactly with: ~ rosachicken_`;
+
+                const msg = await callGemini(prompt);
+                setNotifContent(msg);
+                setShowNotifModal(true);
+                setSGenerating(false);
+
+                // Delay the update to allow modal to open smoothly first
+                if (type === 'promotion') {
+                    setTimeout(() => {
+                        const today = new Date().toISOString().split('T')[0];
+                        const alreadyLogged = selectedStaff.notes.some(n => n.content.includes('Promotion DM Generated') && n.date === today);
+                        if (!alreadyLogged) {
+                            const newNote = { id: Date.now(), date: today, author: 'System', content: 'System: Generated Promotion Template' };
+                            updateStaff({ ...selectedStaff, notes: [...selectedStaff.notes, newNote] });
+                        }
+                    }, 500);
+                }
+            };
+
+            const handleFormalizeReason = async () => {
+                if (!sReason) return;
+                setSGenerating(true);
+                const prompt = `Rewrite the following disciplinary reason to be professional, objective, and suitable for an official staff record (admin log). Keep it concise.\n\nInput: "${sReason}"`;
+                const response = await callGemini(prompt);
+                setSReason(response.replace(/"/g, ''));
+                setSGenerating(false);
+            };
+
+            const handleSummarizeNotes = async () => {
+                if (selectedStaff.notes.length === 0) { setSummary("No notes available to summarize."); return; }
+                setSumLoading(true);
+                const notesText = selectedStaff.notes.map(n => `[${n.date}] ${n.author}: ${n.content}`).join('\n');
+                const prompt = `Analyze the following staff notes and provide a 3-bullet point summary of their performance, behavior, and any patterns. Keep it brief.\n\nNotes:\n${notesText}`;
+                const response = await callGemini(prompt);
+                setSummary(response);
+                setSumLoading(false);
+            };
+
+            const submitStrike = () => {
+                const today = new Date();
+                const expiry = new Date();
+                expiry.setDate(today.getDate() + STRIKE_EXPIRY_DAYS[sLevel]);
+                const newStrike = { date: today.toISOString().split('T')[0], expiryDate: expiry.toISOString().split('T')[0], level: parseInt(sLevel), reason: sReason, active: true };
+                const newHistory = [...selectedStaff.strikeHistory, newStrike];
+                const totalStrikes = newHistory.filter(s => s.active).reduce((a,b) => a + b.level, 0);
+                updateStaff({ ...selectedStaff, strikeHistory: newHistory, strikes: totalStrikes > 3 ? 3 : totalStrikes, notes: [...selectedStaff.notes, { id: Date.now(), date: newStrike.date, author: 'Manager', content: `Strike Lvl ${sLevel}: ${sReason}`, type: 'Warning' }] });
+                setShowStrikeModal(false);
+                setSReason("");
+            };
+
+            const confirmLoa = () => {
+                if (!loaDate) return alert("Return date required");
+                updateStaff({
+                    ...selectedStaff,
+                    isOnLoa: true,
+                    status: 'LOA',
+                    loaReturnDate: loaDate,
+                    notes: [...selectedStaff.notes, { id: Date.now(), date: new Date().toISOString().split('T')[0], author: 'Manager', content: `Started LOA until ${loaDate}` }]
+                });
+                setShowLoaModal(false);
+                setLoaDate("");
+            };
+
+            const updateStats = () => {
+                // Ensure all inputs are treated as numbers to prevent string concatenation bugs
+                const currentTickets = parseInt(selectedStaff.weeklyTickets) || 0;
+                const currentMessages = parseInt(selectedStaff.weeklyMessages) || 0;
+                const addTickets = parseInt(statsUpdate.tickets) || 0;
+                const addMessages = parseInt(statsUpdate.messages) || 0;
+
+                updateStaff({
+                    ...selectedStaff,
+                    weeklyTickets: currentTickets + addTickets,
+                    weeklyMessages: currentMessages + addMessages
+                });
+                setShowStatsModal(false);
+                setStatsUpdate({ tickets: 0, messages: 0 });
+            };
+
+            return (
+                <div className="h-full flex gap-6">
+                    <div className="w-1/3 space-y-6 overflow-y-auto">
+                        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700 text-center relative">
+                            {selectedStaff.status !== 'Alumni' && ( <button onClick={() => { setEditFormData({...selectedStaff}); setEditMode(true); }} className="absolute top-4 right-4 text-gray-400 hover:text-white"><Edit2 size={16} /></button> )}
+                            <img src={selectedStaff.avatarUrl} className={`w-24 h-24 mx-auto rounded-full border-4 ${selectedStaff.status==='Alumni'?'border-gray-600 grayscale':'border-gray-700'} mb-4`} />
+                            <h2 className="text-xl font-bold text-white">{selectedStaff.name}</h2>
+                            <p className="text-gray-400 text-sm mb-4">{selectedStaff.discordId}</p>
+                            <span className={`px-3 py-1 rounded text-xs border ${getStatusColor(selectedStaff.status, selectedStaff.strikes)}`}>{selectedStaff.status.toUpperCase()}</span>
+                            {selectedStaff.status !== 'Alumni' && (
+                                <div className="mt-6 flex flex-col gap-2">
+                                    <button onClick={() => handleCopyDM('review')} className="bg-gray-700 hover:bg-gray-600 text-white py-2 rounded text-sm flex justify-center gap-2">{sGenerating ? <Loader2 className="animate-spin" size={16}/> : <Mail size={16}/>} Copy Review DM</button>
+                                    <button onClick={() => setShowOffboardModal(true)} className="border border-red-900 text-red-500 hover:bg-red-900/20 py-2 rounded text-sm flex justify-center gap-2"><LogOut size={16}/> Offboard</button>
+                                    <button onClick={() => deleteStaff(selectedStaff.id)} className="bg-red-950/30 hover:bg-red-900/50 text-red-400 border border-red-900/50 py-2 rounded text-sm flex justify-center gap-2 transition-all"><Trash2 size={16}/> Delete Profile</button>
+                                </div>
+                            )}
+                            {selectedStaff.status === 'Alumni' && (
+                                <div className="mt-6 flex flex-col gap-2">
+                                    <button onClick={() => deleteStaff(selectedStaff.id)} className="bg-red-950/30 hover:bg-red-900/50 text-red-400 border border-red-900/50 py-2 rounded text-sm flex justify-center gap-2 transition-all"><Trash2 size={16}/> Delete Record</button>
+                                </div>
+                            )}
+                        </div>
+                        {selectedStaff.role === 'Trial Moderator' && selectedStaff.status !== 'Alumni' && (
+                            <div className="bg-gray-800 rounded-lg p-6 border border-gray-700 relative overflow-hidden">
+                                {(() => {
+                                    const daysIn = calculateTimeInService(selectedStaff.joinedDate).totalDays;
+                                    const remaining = 14 - daysIn;
+                                    const progress = Math.min(100, (daysIn / 14) * 100);
+                                    const isExpired = daysIn >= 14;
+                                    return (
+                                        <div>
+                                            <h3 className="text-gray-400 text-xs font-bold uppercase mb-4 flex items-center gap-2"><Clock size={14} className={isExpired ? "text-green-500" : "text-yellow-500"}/> Trial Progress</h3>
+                                            <div className="flex justify-between text-sm mb-1"><span className={`font-bold ${isExpired ? "text-green-400" : "text-white"}`}>{isExpired ? "Trial Completed" : `${remaining} Days Left`}</span><span className="text-gray-500">{daysIn}/14 Days</span></div>
+                                            <div className="w-full bg-gray-900 rounded-full h-2.5 overflow-hidden"><div className={`h-2.5 rounded-full transition-all duration-1000 ${isExpired ? 'bg-green-500' : 'bg-yellow-500'}`} style={{ width: `${progress}%` }}></div></div>
+                                            {isExpired ? (
+                                                <div className="mt-4">
+                                                    <p className="text-xs text-green-400/80 bg-green-900/20 p-2 rounded border border-green-900/50 mb-3"><Check size={10} className="inline mr-1"/> Ready for promotion review.</p>
+                                                    <button onClick={() => handleCopyDM('promotion')} className="w-full bg-green-700 hover:bg-green-600 text-white px-3 py-2 rounded text-sm flex items-center justify-center gap-2 font-bold shadow-lg shadow-green-900/20">{sGenerating ? <Loader2 className="animate-spin" size={14}/> : <Award size={14}/>} Promote & Notify</button>
+                                                </div>
+                                            ) : ( <p className="text-xs text-gray-500 mt-2">Evaluation due in {remaining} days.</p> )}
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+                        )}
+                        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700 relative mb-6">
+                            <h3 className="text-gray-400 text-xs font-bold uppercase mb-4 flex items-center gap-2"><Trophy size={14}/> Lifetime Stats</h3>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="bg-gray-900 p-3 rounded"><div className="text-xs text-gray-500">Total Tickets</div><div className="text-xl font-bold text-white">{selectedStaff.totalTickets || 0}</div></div>
+                                <div className="bg-gray-900 p-3 rounded"><div className="text-xs text-gray-500">Total Messages</div><div className="text-xl font-bold text-white">{selectedStaff.totalMessages || 0}</div></div>
+                            </div>
+                        </div>
+                        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700 relative">
+                            <h3 className="text-gray-400 text-xs font-bold uppercase mb-4 flex items-center gap-2"><Activity size={14}/> Weekly Activity</h3>
+                            <button onClick={() => setShowStatsModal(true)} className="absolute top-4 right-4 text-blue-400 hover:text-blue-300 text-xs font-bold flex items-center gap-1">+ Log Activity</button>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="bg-gray-900 p-3 rounded"><div className="text-xs text-gray-500">Tickets</div><div className="text-xl font-bold text-white">{selectedStaff.weeklyTickets}</div></div>
+                                <div className="bg-gray-900 p-3 rounded"><div className="text-xs text-gray-500">Messages</div><div className="text-xl font-bold text-white">{selectedStaff.weeklyMessages}</div></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="flex-1 space-y-6 overflow-y-auto">
+                        {selectedStaff.status !== 'Alumni' && (
+                            <div className="flex gap-2">
+                                <button onClick={() => setShowStrikeModal(true)} className="bg-red-900/50 hover:bg-red-900 text-red-200 px-4 py-2 rounded border border-red-700 text-sm flex items-center gap-2"><Gavel size={16}/> Issue Strike</button>
+                                <button onClick={() => selectedStaff.isOnLoa ? updateStaff({...selectedStaff, isOnLoa: false, status: 'Active', loaReturnDate: undefined}) : setShowLoaModal(true)} className={`${selectedStaff.isOnLoa ? 'bg-yellow-600 hover:bg-yellow-500' : 'bg-blue-700 hover:bg-blue-600'} text-white px-4 py-2 rounded text-sm flex items-center gap-2`}><Plane size={16}/> {selectedStaff.isOnLoa ? 'End LOA' : 'Start LOA'}</button>
+                                <button onClick={() => updateStaff({...selectedStaff, status: selectedStaff.status === 'Inactive' ? 'Active' : 'Inactive'})} className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded text-sm flex items-center gap-2"><Power size={16}/> {selectedStaff.status==='Inactive'?'Set Active':'Set Inactive'}</button>
+                            </div>
+                        )}
+                        <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden flex flex-col h-[500px]">
+                            <div className="p-4 bg-gray-900/50 border-b border-gray-700 flex justify-between items-center shrink-0">
+                                <h3 className="font-bold text-gray-200 flex items-center gap-2"><History size={16}/> Staff Timeline</h3>
+                                <button onClick={handleSummarizeNotes} disabled={sumLoading} className="text-xs bg-purple-900/50 text-purple-300 px-2 py-1 rounded border border-purple-800 hover:bg-purple-900 flex items-center gap-1">{sumLoading ? <Loader2 className="animate-spin" size={12}/> : <Sparkles size={12}/>} Summarize</button>
+                            </div>
+                            {summary && (
+                                <div className="mx-4 mt-4 p-3 bg-purple-900/20 border border-purple-500/30 rounded text-sm text-gray-300 shrink-0">
+                                    <div className="flex justify-between items-center mb-1"><span className="text-purple-400 text-xs font-bold uppercase">AI Summary</span><button onClick={() => setSummary('')}><X size={12}/></button></div>
+                                    <div className="whitespace-pre-line">{summary}</div>
+                                </div>
+                            )}
+                            <div className="flex-1 overflow-auto p-4 space-y-4">
+                                {timeline.map((event, idx) => (
+                                    <div key={idx} className={`flex gap-3`}>
+                                        <div className="flex flex-col items-center"><div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${event.border} bg-gray-900 ${event.color} shrink-0`}>{event.icon}</div>{idx !== timeline.length - 1 && <div className="w-0.5 bg-gray-700 h-full mt-2"></div>}</div>
+                                        <div className="pb-4"><div className="text-xs text-gray-500 mb-0.5">{event.date}</div><div className="text-gray-200 text-sm font-medium">{event.content}</div>{event.sub && <div className="text-gray-400 text-xs mt-1">{event.sub}</div>}</div>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="p-4 bg-gray-900/30 border-t border-gray-700 shrink-0">
+                                <div className="flex gap-2">
+                                    <input className="flex-1 bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" placeholder="Add a quick note..." value={noteText} onChange={e => setNoteText(e.target.value)} onKeyDown={e => e.key === 'Enter' && noteText && (updateStaff({...selectedStaff, notes: [...(selectedStaff.notes || []), {id: Date.now(), date: new Date().toISOString().split('T')[0], author: 'Manager', content: noteText}]}), setNoteText(""))} />
+                                    <button onClick={() => { if(noteText) { updateStaff({...selectedStaff, notes: [...(selectedStaff.notes || []), {id: Date.now(), date: new Date().toISOString().split('T')[0], author: 'Manager', content: noteText}]}); setNoteText(""); } }} className="bg-blue-600 text-white px-4 rounded text-sm">Post</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {/* Modals for ProfileView */}
+                    {showNotifModal && (
+                        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] animate-in fade-in">
+                            <div className={`bg-gray-800 p-6 rounded-lg w-[600px] border ${notifType === 'promotion' ? 'border-green-500' : 'border-blue-600'} space-y-4 shadow-2xl`}>
+                                <h3 className={`font-bold flex items-center gap-2 text-xl ${notifType === 'promotion' ? 'text-green-400' : 'text-white'}`}>{notifType === 'promotion' ? <Award size={24}/> : <Mail size={24}/>} {notifType === 'promotion' ? 'Promotion Announcement' : 'Notification Preview'}</h3>
+                                <div className="bg-gray-900 p-4 rounded border border-gray-700"><textarea className="w-full h-48 bg-transparent text-gray-300 text-sm focus:outline-none resize-none" value={notifContent} readOnly /></div>
+                                <div className="flex justify-end gap-2">
+                                    <button onClick={() => setShowNotifModal(false)} className="text-gray-400 text-sm">Close</button>
+                                    <button onClick={() => { copyToClipboard(notifContent); setShowNotifModal(false); }} className={`${notifType === 'promotion' ? 'bg-green-600 hover:bg-green-500' : 'bg-blue-600 hover:bg-blue-500'} text-white px-4 py-2 rounded text-sm flex items-center gap-2`}><Copy size={16}/> Copy to Clipboard</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    {editMode && editFormData && (
+                        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 animate-in fade-in">
+                            <div className="bg-gray-800 p-6 rounded-lg w-[600px] border border-gray-600 space-y-4 max-h-[90vh] overflow-y-auto">
+                                <h3 className="text-white font-bold text-lg flex items-center gap-2 border-b border-gray-700 pb-2"><Edit2 size={18}/> Edit Full Profile</h3>
+                                <div className="grid grid-cols-2 gap-4"><Input label="Username" value={editFormData.name} onChange={v => setEditFormData({...editFormData, name: v})} /><Input label="Discord ID" value={editFormData.discordId} onChange={v => setEditFormData({...editFormData, discordId: v})} /></div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div><label className="block text-gray-400 text-xs mb-1">Role</label><select className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white text-sm" value={editFormData.role} onChange={e => setEditFormData({...editFormData, role: e.target.value})}>{Object.keys(ROLE_HIERARCHY).map(r => <option key={r} value={r}>{r}</option>)}</select></div>
+                                    <div><label className="block text-gray-400 text-xs mb-1">Status</label><select className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white text-sm" value={editFormData.status} onChange={e => setEditFormData({...editFormData, status: e.target.value})}>{['Active', 'Inactive', 'Trial', 'LOA', 'Alumni'].map(s => <option key={s} value={s}>{s}</option>)}</select></div>
+                                </div>
+                                <div className="grid grid-cols-3 gap-4"><Input label="Country" value={editFormData.country} onChange={v => setEditFormData({...editFormData, country: v})} /><Input label="Timezone" value={editFormData.timezone} onChange={v => setEditFormData({...editFormData, timezone: v})} /><Input label="Language" value={editFormData.language} onChange={v => setEditFormData({...editFormData, language: v})} /></div>
+                                <div className="grid grid-cols-2 gap-4"><Input label="Joined Date" type="date" value={editFormData.joinedDate} onChange={v => setEditFormData({...editFormData, joinedDate: v})} /><Input label="Last Active" type="date" value={editFormData.lastActiveDate} onChange={v => setEditFormData({...editFormData, lastActiveDate: v})} /></div>
+                                <div className="p-3 bg-gray-900/50 rounded border border-gray-700"><h4 className="text-gray-400 text-xs font-bold uppercase mb-3">Admin Overrides</h4><div className="grid grid-cols-3 gap-4"><Input label="Strikes" type="number" value={editFormData.strikes} onChange={v => setEditFormData({...editFormData, strikes: parseInt(v) || 0})} /><Input label="Tickets" type="number" value={editFormData.weeklyTickets} onChange={v => setEditFormData({...editFormData, weeklyTickets: parseInt(v) || 0})} /><Input label="Messages" type="number" value={editFormData.weeklyMessages} onChange={v => setEditFormData({...editFormData, weeklyMessages: parseInt(v) || 0})} /></div></div>
+                                <div className="flex justify-end gap-2 pt-2">
+                                    <button onClick={() => setEditMode(false)} className="text-gray-400 px-4 py-2 text-sm hover:text-white">Cancel</button>
+                                    <button onClick={() => { let updatedNotes = [...(editFormData.notes || [])]; if (editFormData.role !== selectedStaff.role) { const oldRank = ROLE_HIERARCHY[selectedStaff.role]; const newRank = ROLE_HIERARCHY[editFormData.role]; const isPromotion = oldRank > newRank; const action = isPromotion ? 'Promoted' : 'Demoted'; updatedNotes.push({ id: Date.now(), date: new Date().toISOString().split('T')[0], author: 'System', content: `System: ${action} from ${selectedStaff.role} to ${editFormData.role}` }); } updateStaff({...editFormData, notes: updatedNotes}); setEditMode(false); }} className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded text-sm font-bold">Save Changes</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    {showStrikeModal && (
+                        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+                            <div className="bg-gray-800 p-6 rounded-lg w-[500px] border border-red-600 space-y-4">
+                                <h3 className="text-red-400 font-bold flex items-center gap-2"><Gavel/> Issue Strike</h3>
+                                <div><label className="text-xs text-gray-400 block mb-1">Level</label><select className="w-full bg-gray-900 border border-gray-700 text-white p-2 rounded" value={sLevel} onChange={e => setSLevel(e.target.value)}><option value="1">Strike 1 (Minor)</option><option value="2">Strike 2 (Major)</option><option value="3">Strike 3 (Critical)</option></select></div>
+                                <div><div className="flex justify-between items-center mb-1"><label className="text-xs text-gray-400 block">Handbook Rule & Reason</label><button onClick={handleFormalizeReason} disabled={!sReason || sGenerating} className="text-[10px] bg-purple-900/50 text-purple-300 px-2 py-0.5 rounded border border-purple-800 hover:bg-purple-900 flex items-center gap-1">{sGenerating ? <Loader2 className="animate-spin" size={10}/> : <Sparkles size={10}/>} Formalize Text</button></div><select className="w-full bg-gray-900 border border-gray-700 text-white p-2 rounded text-sm mb-2" onChange={e => setSReason(prev => prev ? prev + " " + e.target.value : e.target.value)}><option value="">Select Violation...</option>{HANDBOOK_RULES.map(r => <option key={r.code} value={`${r.code} ${r.title}`}>{r.code} - {r.title}</option>)}</select><textarea className="w-full bg-gray-900 border border-gray-700 text-white p-2 rounded h-24 text-sm" placeholder="Reason (e.g., 'Rude to players')..." value={sReason} onChange={e => setSReason(e.target.value)} /></div>
+                                <div className="flex justify-between items-center pt-4"><button onClick={() => handleCopyDM('strike')} disabled={!sReason || sGenerating} className="bg-purple-700 hover:bg-purple-600 text-white px-3 py-2 rounded text-xs flex items-center gap-2">{sGenerating ? <Loader2 className="animate-spin" size={14}/> : <Mail size={14}/>} Copy DM</button><div className="flex gap-2"><button onClick={() => setShowStrikeModal(false)} className="text-gray-400 text-sm">Cancel</button><button onClick={submitStrike} className="bg-red-600 text-white px-4 py-2 rounded text-sm">Confirm Strike</button></div></div>
+                            </div>
+                        </div>
+                    )}
+                    {showOffboardModal && (
+                        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+                            <div className="bg-gray-800 p-6 rounded-lg w-96 border border-gray-600 space-y-4">
+                                <h3 className="text-white font-bold flex items-center gap-2"><Archive/> Offboard Staff</h3>
+                                <div className="flex gap-2"><button onClick={() => setExitReason('Resigned')} className={`flex-1 py-2 rounded text-sm ${exitReason==='Resigned'?'bg-blue-600 text-white':'bg-gray-700 text-gray-400'}`}>Resigned</button><button onClick={() => setExitReason('Terminated')} className={`flex-1 py-2 rounded text-sm ${exitReason==='Terminated'?'bg-red-600 text-white':'bg-gray-700 text-gray-400'}`}>Terminated</button></div>
+                                <div className="flex items-center gap-2"><input type="checkbox" checked={rehire} onChange={e => setRehire(e.target.checked)} /><span className="text-gray-300 text-sm">Eligible for Rehire</span></div>
+                                <div className="flex justify-end gap-2 mt-4"><button onClick={() => setShowOffboardModal(false)} className="text-gray-400 text-sm">Cancel</button><button onClick={() => { archiveStaff(selectedStaff.id, exitReason, rehire); setShowOffboardModal(false); }} className="bg-gray-600 hover:bg-gray-500 text-white px-4 py-2 rounded text-sm">Confirm</button></div>
+                            </div>
+                        </div>
+                    )}
+                    {showLoaModal && (
+                        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+                            <div className="bg-gray-800 p-6 rounded-lg w-80 border border-yellow-600 space-y-4">
+                                <h3 className="text-white font-bold flex items-center gap-2"><Plane className="text-yellow-500"/> Start LOA</h3>
+                                <p className="text-sm text-gray-400">When will they return?</p>
+                                <Input type="date" value={loaDate} onChange={setLoaDate} />
+                                <div className="flex justify-end gap-2 mt-4"><button onClick={() => setShowLoaModal(false)} className="text-gray-400 text-sm">Cancel</button><button onClick={confirmLoa} className="bg-yellow-600 text-white px-4 py-2 rounded text-sm">Confirm</button></div>
+                            </div>
+                        </div>
+                    )}
+                    {showStatsModal && (
+                        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+                            <div className="bg-gray-800 p-6 rounded-lg w-80 border border-blue-600 space-y-4">
+                                <h3 className="text-white font-bold flex items-center gap-2"><BarChart3 className="text-blue-500"/> Log Activity</h3>
+                                <p className="text-sm text-gray-400">Add to current weekly counts.</p>
+                                <div className="grid grid-cols-2 gap-2"><div><label className="text-xs text-gray-500 block mb-1">Add Tickets</label><input type="number" className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white" value={statsUpdate.tickets} onChange={e => setStatsUpdate({...statsUpdate, tickets: e.target.value})} /></div><div><label className="text-xs text-gray-500 block mb-1">Add Msgs</label><input type="number" className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white" value={statsUpdate.messages} onChange={e => setStatsUpdate({...statsUpdate, messages: e.target.value})} /></div></div>
+                                <div className="flex justify-end gap-2 mt-4"><button onClick={() => setShowStatsModal(false)} className="text-gray-400 text-sm">Cancel</button><button onClick={updateStats} className="bg-blue-600 text-white px-4 py-2 rounded text-sm">Update</button></div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const ReportModal = ({ onClose }) => {
+            const [reportText, setReportText] = useState("");
+            const [loading, setLoading] = useState(true);
+            const [progress, setProgress] = useState(0);
+            const [loadTime, setLoadTime] = useState(0);
+            const [staff, setStaff] = useState(() => JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY)) || INITIAL_STAFF);
+
+            useEffect(() => {
+                const startTime = Date.now();
+                let currentProgress = 0;
+                const interval = setInterval(() => {
+                    currentProgress += Math.random() * 15;
+                    if (currentProgress >= 100) {
+                        currentProgress = 100;
+                        clearInterval(interval);
+                        const activeStaff = staff.filter(s => s.status !== 'Alumni');
+                        const totalTickets = activeStaff.reduce((acc, s) => acc + (parseInt(s.weeklyTickets) || 0), 0);
+                        const totalMessages = activeStaff.reduce((acc, s) => acc + (parseInt(s.weeklyMessages) || 0), 0);
+                        const sortedByPerformance = [...activeStaff].sort((a, b) => (parseInt(b.weeklyTickets) + parseInt(b.weeklyMessages)/20) - (parseInt(a.weeklyTickets) + parseInt(a.weeklyMessages)/20));
+                        const topPerformer = sortedByPerformance[0];
+                        const newHires = activeStaff.filter(s => calculateTimeInService(s.joinedDate).totalDays <= 7);
+                        const loaStaff = activeStaff.filter(s => s.isOnLoa);
+                        const report = `**Weekly Staff Update 📋**\n*Date: ${formatDate(new Date())}*\n\nHey team! Here is a quick rundown of how we performed this week.\n\n**🏆 Star Performer**\nA massive shoutout to **${topPerformer ? topPerformer.name : "N/A"}**! You absolutely crushed it this week with your activity. Keep it up!\n\n**📊 How We Did**\nAs a team, we handled **${totalTickets} tickets** and sent **${totalMessages} messages**.\nWe currently have **${activeStaff.length} active staff members**.\n\n**👋 Welcome to the Team**\n${newHires.length > 0 ? `Let's give a warm welcome to our newest additions:\n${newHires.map(s => `• <@${s.discordId}> (${s.role})`).join('\n')}` : "We didn't have any new joins this week."}\n\n**✈️ Away on Leave**\n${loaStaff.length > 0 ? `Just a reminder that these folks are currently on LOA:\n${loaStaff.map(s => `• ${s.name} (Back: ${s.loaReturnDate ? formatDate(s.loaReturnDate) : 'TBD'})`).join('\n')}` : "Full house! No one is currently on LOA."}\n\nThanks for all your hard work everyone.\n\n~ rosachicken_`.trim();
+                        setReportText(report);
+                        setLoadTime(((Date.now() - startTime) / 1000).toFixed(2));
+                        setLoading(false);
+                    }
+                    setProgress(currentProgress);
+                }, 100);
+                return () => clearInterval(interval);
+            }, [staff]);
+
+            return (
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] animate-in fade-in backdrop-blur-sm">
+                    <div className="bg-gray-800 p-6 rounded-lg w-[600px] border border-blue-600 space-y-4 shadow-2xl">
+                        <h3 className="text-white font-bold flex items-center gap-2 text-xl"><ClipboardCheck className="text-blue-500"/> Weekly Report Generator</h3>
+                        {loading ? (
+                            <div className="py-12 space-y-6">
+                                <div className="flex justify-center"><Loader2 className="animate-spin text-blue-500 w-12 h-12" /></div>
+                                <div className="space-y-2"><div className="flex justify-between text-xs text-blue-300 font-bold uppercase tracking-widest"><span>Analyzing Data...</span><span>{Math.round(progress)}%</span></div><div className="w-full bg-gray-900 rounded-full h-4 overflow-hidden border border-gray-700 shadow-inner"><div className="bg-gradient-to-r from-blue-600 to-blue-400 h-full transition-all duration-200 ease-out" style={{ width: `${progress}%` }}></div></div></div>
+                                <p className="text-center text-xs text-gray-500 animate-pulse">Calculating tickets, messages, and activity streaks...</p>
+                            </div>
+                        ) : (
+                            <>
+                                <div className="flex justify-between items-center text-sm text-gray-400 bg-gray-900/50 p-2 rounded border border-gray-700"><span>Report ready for distribution.</span><span className="text-xs text-green-400 bg-green-900/30 px-2 py-1 rounded border border-green-800 flex items-center gap-1"><TrendingUp size={12}/> Generated in {loadTime}s</span></div>
+                                <div className="bg-gray-900 p-4 rounded border border-gray-700 shadow-inner"><textarea className="w-full h-64 bg-transparent text-gray-300 text-sm font-mono focus:outline-none resize-none" value={reportText} readOnly /></div>
+                                <div className="flex justify-end gap-2"><button onClick={onClose} className="text-gray-400 hover:text-white px-4 py-2 rounded text-sm transition-colors">Close</button><button onClick={() => { copyToClipboard(reportText); onClose(); }} className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded text-sm font-bold flex items-center gap-2 shadow-lg shadow-blue-900/20 transform hover:-translate-y-0.5 transition-all"><Copy size={16}/> Copy Report</button></div>
+                            </>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const EndWeekModal = ({ staff, setStaff, onClose }) => {
+            const [loading, setLoading] = useState(true);
+            const [progress, setProgress] = useState(0);
+            const [summary, setSummary] = useState(null);
+
+            useEffect(() => {
+                let currentProgress = 0;
+                const interval = setInterval(() => {
+                    currentProgress += 5; // Fast loading
+                    setProgress(currentProgress);
+                    
+                    if (currentProgress >= 100) {
+                        clearInterval(interval);
+                        
+                        // Perform the Update
+                        let archivedTickets = 0;
+                        let archivedMessages = 0;
+                        
+                        const updatedStaff = staff.map(s => {
+                            const weeklyTix = parseInt(s.weeklyTickets) || 0;
+                            const weeklyMsg = parseInt(s.weeklyMessages) || 0;
+                            const totalTix = parseInt(s.totalTickets) || 0;
+                            const totalMsg = parseInt(s.totalMessages) || 0;
+                            
+                            archivedTickets += weeklyTix;
+                            archivedMessages += weeklyMsg;
+
+                            return {
+                                ...s,
+                                totalTickets: totalTix + weeklyTix,
+                                totalMessages: totalMsg + weeklyMsg,
+                                weeklyTickets: 0,
+                                weeklyMessages: 0
+                            };
+                        });
+                        
+                        setStaff(updatedStaff);
+                        setSummary({ tickets: archivedTickets, messages: archivedMessages, count: updatedStaff.length });
+                        setLoading(false);
+                    }
+                }, 50);
+                return () => clearInterval(interval);
+            }, []);
+
+            return (
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] animate-in fade-in backdrop-blur-sm">
+                    <div className="bg-gray-800 p-6 rounded-lg w-[500px] border border-red-600 space-y-4 shadow-2xl">
+                        <h3 className="text-white font-bold flex items-center gap-2 text-xl"><RotateCcw className="text-red-500"/> End Week Processing</h3>
+                        
+                        {loading ? (
+                            <div className="py-8 space-y-4">
+                                <div className="space-y-2">
+                                    <div className="flex justify-between text-xs text-red-300 font-bold uppercase tracking-widest">
+                                        <span>Archiving Stats...</span>
+                                        <span>{progress}%</span>
+                                    </div>
+                                    <div className="w-full bg-gray-900 rounded-full h-4 overflow-hidden border border-gray-700">
+                                        <div className="bg-red-600 h-full transition-all duration-100 ease-out" style={{ width: `${progress}%` }}></div>
+                                    </div>
+                                </div>
+                                <p className="text-center text-xs text-gray-500">Adding weekly totals to lifetime stats and resetting counters...</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                <div className="bg-green-900/20 border border-green-500/30 p-4 rounded text-center">
+                                    <Check className="mx-auto text-green-500 mb-2" size={32} />
+                                    <h4 className="text-green-400 font-bold text-lg">Week Ended Successfully</h4>
+                                    <p className="text-gray-300 text-sm mt-2">
+                                        Archived <strong>{summary.tickets} tickets</strong> and <strong>{summary.messages} messages</strong> across {summary.count} staff members.
+                                    </p>
+                                </div>
+                                <button onClick={onClose} className="w-full bg-gray-700 hover:bg-gray-600 text-white py-3 rounded-lg font-bold">Return to Dashboard</button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const DeleteProfileModal = ({ staffMember, onDelete, onClose }) => {
+            const [status, setStatus] = useState('confirm'); // confirm, deleting, done
+            const [progress, setProgress] = useState(0);
+
+            useEffect(() => {
+                if (status === 'deleting') {
+                    let p = 0;
+                    const interval = setInterval(() => {
+                        p += 5;
+                        setProgress(p);
+                        if (p >= 100) {
+                            clearInterval(interval);
+                            setStatus('done');
+                            onDelete();
+                        }
+                    }, 50); // 1s animation
+                    return () => clearInterval(interval);
+                }
+            }, [status]);
+
+            return (
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[200] animate-in fade-in">
+                    <div className="bg-gray-800 p-6 rounded-lg w-[400px] border border-red-600 shadow-2xl text-center">
+                        {status === 'confirm' && (
+                            <>
+                                <div className="flex justify-center mb-4"><div className="bg-red-900/30 p-4 rounded-full"><Trash2 size={48} className="text-red-500"/></div></div>
+                                <h3 className="text-xl font-bold text-white mb-2">Delete Profile?</h3>
+                                <p className="text-gray-400 text-sm mb-6">Are you sure you want to permanently delete <strong>{staffMember?.name}</strong>? This action cannot be undone.</p>
+                                <div className="flex gap-3 justify-center">
+                                    <button onClick={onClose} className="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600 text-white text-sm">Cancel</button>
+                                    <button onClick={() => setStatus('deleting')} className="px-4 py-2 rounded bg-red-600 hover:bg-red-700 text-white text-sm font-bold">Delete Forever</button>
+                                </div>
+                            </>
+                        )}
+                        {status === 'deleting' && (
+                            <div className="py-8">
+                                <h3 className="text-white font-bold mb-4">Deleting Profile...</h3>
+                                <div className="w-full bg-gray-900 rounded-full h-4 overflow-hidden border border-gray-700">
+                                    <div className="bg-red-600 h-full transition-all duration-75 ease-out" style={{ width: `${progress}%` }}></div>
+                                </div>
+                            </div>
+                        )}
+                        {status === 'done' && (
+                            <div className="py-4">
+                                <div className="flex justify-center mb-4"><Check size={48} className="text-green-500"/></div>
+                                <h3 className="text-xl font-bold text-white mb-2">Deleted</h3>
+                                <p className="text-gray-400 text-sm mb-6">The staff profile has been successfully removed.</p>
+                                <button onClick={onClose} className="w-full px-4 py-2 rounded bg-gray-700 hover:bg-gray-600 text-white text-sm font-bold">Return to Roster</button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const Dashboard = ({ staff, stats, setSelectedStaffId, setActiveTab, setShowReportModal, filteredTimezones, searchQuery, setSearchQuery, listModalConfig, setListModalConfig }) => {
+            const [timeTrigger, setTimeTrigger] = useState(Date.now());
+            useEffect(() => { const timer = setInterval(() => setTimeTrigger(Date.now()), 60000); return () => clearInterval(timer); }, []);
+            
+            const openPendingReview = () => { setListModalConfig({ title: 'Pending Review (Trial Expired)', list: staff.filter(s => s.status !== 'Alumni' && s.status === 'Trial' && calculateTimeInService(s.joinedDate).totalDays >= 14) }); };
+            const openAtRisk = () => { setListModalConfig({ title: 'At Risk Staff', list: staff.filter(s => s.status !== 'Alumni' && (s.strikes >= 2 || calculateTimeInService(s.lastActiveDate).totalDays > 7)) }); };
+            const expiredTrials = staff.filter(s => s.role === 'Trial Moderator' && calculateTimeInService(s.joinedDate).totalDays >= 14 && s.status !== 'Alumni');
+
+            return (
+                <div className="space-y-6 animate-in fade-in duration-500 pb-10">
+                    <div className="flex justify-between items-center bg-gray-800 p-4 rounded-lg border border-gray-700"><div><h2 className="text-lg font-bold text-white">Staff Overview</h2><p className="text-xs text-gray-400">Real-time metrics and alerts.</p></div><button onClick={() => setShowReportModal(true)} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-lg shadow-blue-900/20 hover:scale-105 transition-transform"><ClipboardCheck size={18} /> Generate Weekly Report</button></div>
+                    {expiredTrials.length > 0 && ( <div className="bg-yellow-900/20 border border-yellow-500/50 p-4 rounded-lg flex items-start gap-4 shadow-[0_0_15px_rgba(234,179,8,0.1)]"><div className="p-2 bg-yellow-900/50 rounded-lg shrink-0"><AlertOctagon className="text-yellow-400" size={24} /></div><div><h3 className="text-yellow-400 font-bold text-lg">Trial Period Expired</h3><p className="text-sm text-yellow-200/80 mb-3">The following staff members have completed their 14-day trial period and are ready for review:</p><div className="flex flex-wrap gap-2">{expiredTrials.map(s => ( <button key={s.id} onClick={() => { setSelectedStaffId(s.id); setActiveTab('profile'); }} className="bg-yellow-500/20 hover:bg-yellow-500/30 px-3 py-1.5 rounded text-xs font-bold text-yellow-200 border border-yellow-500/30 transition-colors flex items-center gap-2">{s.name} <ChevronRight size={12}/></button> ))}</div></div></div> )}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4"><StatCard label="Total Staff" value={stats.total} icon={<Users className="text-blue-400" />} /><StatCard label="On LOA" value={stats.loa} icon={<Clock className="text-yellow-400" />} /><StatCard label="Pending Review" value={stats.pendingReview} icon={<FileText className="text-purple-400" />} alert={stats.pendingReview > 0} onClick={openPendingReview} /><StatCard label="At Risk" value={stats.atRisk} icon={<AlertTriangle className="text-red-400" />} alert={stats.atRisk > 0} onClick={openAtRisk} /></div>
+                    <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden relative"><div className="p-4 bg-gray-900/50 border-b border-gray-700 flex justify-between items-center"><h3 className="text-gray-300 text-xs font-bold uppercase flex items-center gap-2"><Monitor size={16} className="text-green-500" /> Digital Command Center</h3><div className="text-xs text-green-500 animate-pulse">● LIVE SYSTEMS ACTIVE</div></div><div className="h-[250px] w-full bg-gray-900 relative bg-grid-pattern overflow-hidden"><img src="https://upload.wikimedia.org/wikipedia/commons/e/ec/World_map_blank_without_borders.svg" className="absolute inset-0 w-full h-full object-fill opacity-30 invert select-none pointer-events-none" alt="World Map Topology" /><div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-transparent pointer-events-none"></div><div className="absolute inset-0 bg-gradient-to-r from-gray-900/50 via-transparent to-gray-900/50 pointer-events-none"></div>
+                        <div className="absolute top-[40%] left-[15%] group cursor-help"><div className="absolute -inset-2 bg-blue-500/20 rounded-full animate-ping"></div><div className="w-2 h-2 bg-blue-400 rounded-full relative z-10 border border-blue-200"></div><div className="absolute top-4 left-1/2 -translate-x-1/2 bg-gray-900 text-[10px] px-2 py-1 rounded border border-gray-700 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-20">US West: {calcTime(-8)}</div></div>
+                        <div className="absolute top-[40%] left-[25%] group cursor-help"><div className="absolute -inset-2 bg-purple-500/20 rounded-full animate-ping delay-75"></div><div className="w-2 h-2 bg-purple-400 rounded-full relative z-10 border border-purple-200"></div><div className="absolute top-4 left-1/2 -translate-x-1/2 bg-gray-900 text-[10px] px-2 py-1 rounded border border-gray-700 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-20">US East: {calcTime(-5)}</div></div>
+                        <div className="absolute top-[70%] left-[32%] group cursor-help"><div className="absolute -inset-2 bg-green-500/20 rounded-full animate-ping delay-1000"></div><div className="w-2 h-2 bg-green-400 rounded-full relative z-10 border border-green-200"></div><div className="absolute top-4 left-1/2 -translate-x-1/2 bg-gray-900 text-[10px] px-2 py-1 rounded border border-gray-700 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-20">Sao Paulo: {calcTime(-3)}</div></div>
+                        <div className="absolute top-[35%] left-[48%] group cursor-help"><div className="absolute -inset-2 bg-green-500/20 rounded-full animate-ping delay-150"></div><div className="w-2 h-2 bg-green-400 rounded-full relative z-10 border border-green-200"></div><div className="absolute top-4 left-1/2 -translate-x-1/2 bg-gray-900 text-[10px] px-2 py-1 rounded border border-gray-700 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-20">London: {calcTime(0)}</div></div>
+                        <div className="absolute top-[38%] left-[51%] group cursor-help"><div className="w-2 h-2 bg-green-600 rounded-full relative z-10 opacity-50"></div><div className="absolute top-4 left-1/2 -translate-x-1/2 bg-gray-900 text-[10px] px-2 py-1 rounded border border-gray-700 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-20">Frankfurt: {calcTime(1)}</div></div>
+                        <div className="absolute top-[75%] left-[54%] group cursor-help"><div className="w-2 h-2 bg-yellow-600 rounded-full relative z-10 opacity-60"></div><div className="absolute top-4 left-1/2 -translate-x-1/2 bg-gray-900 text-[10px] px-2 py-1 rounded border border-gray-700 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-20">Johannesburg: {calcTime(2)}</div></div>
+                        <div className="absolute top-[45%] left-[62%] group cursor-help"><div className="absolute -inset-2 bg-purple-500/20 rounded-full animate-ping delay-500"></div><div className="w-2 h-2 bg-purple-400 rounded-full relative z-10 border border-purple-200"></div><div className="absolute top-4 left-1/2 -translate-x-1/2 bg-gray-900 text-[10px] px-2 py-1 rounded border border-gray-700 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-20">Dubai: {calcTime(4)}</div></div>
+                        <div className="absolute top-[48%] left-[70%] group cursor-help"><div className="w-2 h-2 bg-orange-400 rounded-full relative z-10 opacity-70"></div><div className="absolute top-4 left-1/2 -translate-x-1/2 bg-gray-900 text-[10px] px-2 py-1 rounded border border-gray-700 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-20">New Delhi: {calcTime(5.5)}</div></div>
+                        <div className="absolute top-[58%] left-[78%] group cursor-help"><div className="absolute -inset-2 bg-blue-500/20 rounded-full animate-ping delay-700"></div><div className="w-2 h-2 bg-blue-400 rounded-full relative z-10 border border-blue-200"></div><div className="absolute top-4 left-1/2 -translate-x-1/2 bg-gray-900 text-[10px] px-2 py-1 rounded border border-gray-700 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-20">Singapore: {calcTime(8)}</div></div>
+                        <div className="absolute top-[40%] left-[82%] group cursor-help"><div className="absolute -inset-2 bg-red-500/20 rounded-full animate-ping delay-300"></div><div className="w-2 h-2 bg-red-400 rounded-full relative z-10 border border-red-200"></div><div className="absolute top-4 right-0 bg-gray-900 text-[10px] px-2 py-1 rounded border border-gray-700 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-20">Tokyo: {calcTime(9)}</div></div>
+                        <div className="absolute top-[70%] left-[88%] group cursor-help"><div className="absolute -inset-2 bg-yellow-500/20 rounded-full animate-ping delay-500"></div><div className="w-2 h-2 bg-yellow-400 rounded-full relative z-10 border border-yellow-200"></div><div className="absolute bottom-4 right-0 bg-gray-900 text-[10px] px-2 py-1 rounded border border-gray-700 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-20">Sydney: {calcTime(11)}</div></div>
+                    </div></div>
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div className="bg-gray-800 rounded-lg border border-gray-700 flex flex-col h-[400px]">
+                            <div className="p-4 border-b border-gray-700"><h3 className="text-gray-400 text-xs font-bold uppercase mb-2 flex items-center gap-2"><Globe size={16} /> Timezone Directory</h3><div className="relative"><Search className="absolute left-2 top-2 w-3 h-3 text-gray-500" /><input type="text" placeholder="Search country or zone..." className="w-full bg-gray-900 border border-gray-600 rounded pl-7 py-1 text-xs text-white focus:border-blue-500 focus:outline-none" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} /></div></div>
+                            <div className="flex-1 overflow-y-auto p-2 space-y-1">{filteredTimezones.map((tz, idx) => ( <div key={idx} className="flex justify-between items-center p-2 rounded hover:bg-gray-700 text-xs"><div><div className="font-bold text-gray-200">{tz.country}</div><div className="text-gray-500">{tz.zone}</div></div><div className="font-mono text-blue-300 bg-blue-900/30 px-2 py-1 rounded">{calcTime(tz.offset)}</div></div> ))} {filteredTimezones.length === 0 && <div className="text-center text-gray-500 py-4 text-xs">No matching zones found.</div>}</div>
+                        </div>
+                        <div className="lg:col-span-2 space-y-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="bg-gray-800 p-6 rounded-lg border border-gray-700 flex flex-col justify-center"><h3 className="text-gray-400 text-xs font-bold uppercase mb-4 flex items-center gap-2"><Globe size={16} /> Regional Staffing</h3><div className="space-y-6"><CoverageBar label="Americas (NA/SA)" count={stats.regions.Americas} total={stats.total} color="bg-blue-500" /><CoverageBar label="Europe / Africa (EMEA)" count={stats.regions.EMEA} total={stats.total} color="bg-purple-500" /><CoverageBar label="Asia (APAC)" count={stats.regions.APAC} total={stats.total} color="bg-green-500" /><CoverageBar label="Oceania (AUS/NZ)" count={stats.regions.Oceania} total={stats.total} color="bg-yellow-500" /></div></div>
+                                <div className="bg-gray-800 p-6 rounded-lg border border-gray-700 flex flex-col justify-center"><h3 className="text-gray-400 text-xs font-bold uppercase mb-4 flex items-center gap-2"><Users size={16} /> Staff Hierarchy</h3><div className="space-y-5"><CoverageBar label="Community Manager" count={stats.roleBreakdown.cm} total={stats.total} color="bg-red-400" /><CoverageBar label="Staff Manager" count={stats.roleBreakdown.sm} total={stats.total} color="bg-purple-400" /><CoverageBar label="Head of Moderation" count={stats.roleBreakdown.head} total={stats.total} color="bg-blue-400" /><CoverageBar label="Moderator" count={stats.roleBreakdown.mod} total={stats.total} color="bg-green-400" /><CoverageBar label="Trial Moderator" count={stats.roleBreakdown.trial} total={stats.total} color="bg-yellow-400" /></div></div>
+                                <div className="bg-gray-800 p-6 rounded-lg border border-gray-700 md:col-span-2"><h3 className="text-gray-400 text-xs font-bold uppercase mb-4 flex items-center gap-2"><Gavel size={16} /> Watchlist</h3><div className="space-y-2 h-[200px] overflow-y-auto pr-2">{staff.filter(s => s.strikes > 0 && s.status !== 'Alumni').length === 0 ? <div className="text-gray-500 text-sm text-center py-8">No active strikes.</div> : staff.filter(s => s.strikes > 0 && s.status !== 'Alumni').map(s => ( <div key={s.id} className="flex justify-between items-center p-3 bg-gray-900 rounded hover:bg-gray-700 cursor-pointer" onClick={() => { setSelectedStaffId(s.id); setActiveTab('profile'); }}><div className="flex items-center gap-3"><img src={s.avatarUrl} className="w-8 h-8 rounded-full" /><div><div className="text-sm font-bold text-white">{s.name}</div><div className="text-xs text-red-400">{s.strikes} Strikes</div></div></div><ChevronRight size={16} className="text-gray-500" /></div> ))}</div></div>
+                            </div>
+                        </div>
+                    </div>
+                    {listModalConfig && (
+                        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 animate-in fade-in">
+                            <div className="bg-gray-800 p-6 rounded-lg w-[500px] border border-gray-600 max-h-[80vh] flex flex-col shadow-2xl">
+                                <div className="flex justify-between items-center mb-4 border-b border-gray-700 pb-4"><h3 className="text-xl font-bold text-white flex items-center gap-2">{listModalConfig.title.includes('Risk') ? <AlertTriangle className="text-red-400"/> : <FileText className="text-purple-400"/>} {listModalConfig.title}</h3><button onClick={() => setListModalConfig(null)} className="text-gray-400 hover:text-white transition-colors"><X size={24}/></button></div>
+                                <div className="overflow-y-auto flex-1 space-y-2 pr-2">{listModalConfig.list.length === 0 ? <div className="text-gray-500 text-center py-8">No staff found in this category.</div> : listModalConfig.list.map(s => ( <div key={s.id} onClick={() => { setSelectedStaffId(s.id); setActiveTab('profile'); }} className="flex justify-between items-center p-4 bg-gray-900 rounded-lg hover:bg-gray-700 cursor-pointer border border-gray-700 transition-colors group"><div className="flex items-center gap-4"><img src={s.avatarUrl} className="w-10 h-10 rounded-full bg-gray-800" /><div><div className="font-bold text-white group-hover:text-blue-400 transition-colors">{s.name}</div><div className="text-xs text-gray-400 flex items-center gap-2"><span className={ROLE_COLORS[s.role]}>{s.role}</span>{s.strikes > 0 && <span className="text-red-500 font-bold">• {s.strikes} Strikes</span>}</div></div></div><ChevronRight size={18} className="text-gray-600 group-hover:text-white" /></div> ))}</div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const Roster = ({ staff, setSelectedStaffId, setActiveTab, setShowAddModal, checkAutomation, onEndWeek }) => {
+            const [filter, setFilter] = useState('');
+            const filtered = staff.filter(s => s.status !== 'Alumni' && (s.name?.toLowerCase().includes(filter.toLowerCase()) || s.discordId?.toLowerCase().includes(filter.toLowerCase()))).sort((a,b) => ROLE_HIERARCHY[a.role] - ROLE_HIERARCHY[b.role]);
+            return (
+                <div className="bg-gray-800 rounded-lg border border-gray-700 flex flex-col h-full">
+                    <div className="p-4 border-b border-gray-700 flex gap-4 items-center">
+                        <div className="relative flex-1"><Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-500" /><input className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-4 py-2 text-sm text-white focus:outline-none" placeholder="Search staff..." value={filter} onChange={e => setFilter(e.target.value)} /></div>
+                        <button onClick={() => setShowAddModal(true)} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2"><UserPlus size={16} /> Add</button>
+                        <button onClick={onEndWeek} className="bg-red-700 hover:bg-red-600 text-white px-3 py-2 rounded-lg text-sm flex items-center gap-2" title="End Week (Reset & Archive Stats)"><RotateCcw size={16} /> End Week</button>
+                        <button onClick={checkAutomation} className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg text-sm" title="Run Automation"><RefreshCw size={16} /></button>
+                    </div>
+                    <div className="flex-1 overflow-auto p-2 space-y-1">{filtered.map(s => { const metQuota = (parseInt(s.weeklyTickets) || 0) >= QUOTA.TICKETS && (parseInt(s.weeklyMessages) || 0) >= QUOTA.MESSAGES; return ( <div key={s.id} onClick={() => { setSelectedStaffId(s.id); setActiveTab('profile'); }} className="grid grid-cols-12 gap-4 p-3 rounded hover:bg-gray-700/50 cursor-pointer items-center border border-transparent hover:border-gray-600"><div className="col-span-4 flex items-center gap-3"><div className="relative"><img src={s.avatarUrl} className="w-8 h-8 rounded-full bg-gray-700" /><div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border border-gray-800 ${metQuota ? 'bg-green-500' : 'bg-red-500'}`} title={metQuota ? "Quota Met" : "Quota Failed"}></div></div><div><div className="font-bold text-white text-sm">{s.name}</div><div className="text-xs text-gray-500">{s.discordId}</div></div></div><div className="col-span-3 text-xs text-gray-300"><span className={ROLE_COLORS[s.role]}>{s.role}</span></div><div className="col-span-2"><span className={`text-xs px-2 py-1 rounded border ${getStatusColor(s.status, s.strikes)}`}>{s.isOnLoa ? 'LOA' : s.status}</span></div><div className="col-span-2 text-xs text-gray-400"><div className="flex flex-col"><span>Joined: {formatDate(s.joinedDate)}</span><span className="text-[10px] text-gray-500">Active: {formatDate(s.lastActiveDate)}</span></div></div><div className="col-span-1 text-right font-bold text-sm text-red-500">{s.strikes > 0 ? s.strikes : ''}</div></div> ); })}</div>
+                </div>
+            );
+        };
+
+        const Handbook = () => {
+            const [aiQuery, setAiQuery] = useState('');
+            const [aiAnswer, setAiAnswer] = useState('');
+            const [aiLoading, setAiLoading] = useState(false);
+            const handleAskHandbook = async () => { if (!aiQuery) return; setAiLoading(true); const context = HANDBOOK_RULES.map(r => `${r.code} ${r.title}: ${r.desc}`).join('\n'); const prompt = `You are the Head Admin of a gaming community. Based ONLY on the following rules, answer the user's question clearly and authoritatively. If the answer isn't in the rules, state that it's a gap in policy.\n\nRules Context:\n${context}\n\nUser Question: ${aiQuery}`; const response = await callGemini(prompt); setAiAnswer(response); setAiLoading(false); };
+            return (
+                <div className="bg-gray-800 rounded-lg border border-gray-700 h-full flex flex-col overflow-hidden">
+                    <div className="p-6 border-b border-gray-700 bg-gray-900/50"><h2 className="text-2xl font-bold text-white flex items-center gap-3"><BookOpen className="text-blue-500"/> Handbook Quick Ref</h2></div>
+                    <div className="p-4 bg-gray-900 border-b border-gray-700"><div className="flex gap-2"><div className="relative flex-1"><Bot className="absolute left-3 top-2.5 w-4 h-4 text-purple-400" /><input className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-9 pr-4 py-2 text-sm text-white focus:outline-none focus:border-purple-500" placeholder="Ask the AI about policies (e.g., 'What counts as inactivity?')" value={aiQuery} onChange={e => setAiQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAskHandbook()} /></div><button onClick={handleAskHandbook} disabled={aiLoading} className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2">{aiLoading ? <Loader2 className="animate-spin" size={16}/> : <Sparkles size={16}/>} Ask AI</button></div>{aiAnswer && ( <div className="mt-4 p-4 bg-purple-900/20 border border-purple-500/30 rounded-lg text-sm text-gray-200 markdown-prose animate-in fade-in"><div className="flex justify-between items-start mb-2"><span className="text-purple-400 font-bold text-xs uppercase tracking-widest flex items-center gap-2"><Bot size={12}/> AI Response</span><button onClick={() => setAiAnswer('')} className="text-gray-500 hover:text-white"><X size={14}/></button></div><div className="whitespace-pre-line">{aiAnswer}</div></div> )}</div>
+                    <div className="flex-1 overflow-auto p-6 space-y-6">{HANDBOOK_RULES.map(r => ( <div key={r.code} className="bg-gray-900 p-4 rounded border border-gray-700"><span className="text-blue-400 font-mono font-bold mr-2">{r.code}</span><span className="text-white font-medium">{r.title}</span><p className="text-xs text-gray-400 mt-1">{r.desc}</p></div> ))}</div>
+                </div>
+            );
+        };
+
+        const AlumniView = ({ staff, setSelectedStaffId, setActiveTab }) => {
+            const alumni = staff.filter(s => s.status === 'Alumni').sort((a,b) => new Date(b.exitDate) - new Date(a.exitDate));
+            return (
+                <div className="bg-gray-800 rounded-lg border border-gray-700 h-full flex flex-col">
+                    <div className="p-4 border-b border-gray-700 bg-gray-900/50"><h2 className="text-xl font-bold text-white flex items-center gap-2"><Archive className="text-gray-400"/> Alumni Archive</h2></div>
+                    <div className="flex-1 overflow-auto p-4 space-y-2">{alumni.length === 0 ? <div className="text-gray-500 text-center py-10">No alumni records found.</div> : alumni.map(s => ( <div key={s.id} onClick={() => { setSelectedStaffId(s.id); setActiveTab('profile'); }} className="flex justify-between items-center p-4 bg-gray-900 rounded border border-gray-700 hover:bg-gray-700 cursor-pointer"><div className="flex items-center gap-4"><img src={s.avatarUrl} className="w-10 h-10 rounded-full grayscale opacity-70" /><div><div className="font-bold text-gray-300">{s.name}</div><div className="text-xs text-gray-500">{s.role} • Left: {formatDate(s.exitDate)}</div></div></div><div className="text-right"><span className={`text-xs px-2 py-1 rounded border ${s.rehireEligible ? 'bg-green-900/20 text-green-400 border-green-900' : 'bg-red-900/20 text-red-400 border-red-900'}`}>{s.rehireEligible ? 'Rehire Eligible' : 'Do Not Rehire'}</span><div className="text-xs text-gray-500 mt-1">{s.exitReason}</div></div></div> ))}</div>
+                </div>
+            );
+        };
+
+        const AddStaffModal = ({ addStaff, setShowAddModal }) => {
+            const [formData, setFormData] = useState({ name: '', discordId: '', role: 'Trial Moderator', country: '', timezone: '', joinedDate: new Date().toISOString().split('T')[0] });
+            const handleSubmit = () => {
+                if(!formData.name || !formData.discordId) return alert("Name and Discord ID required");
+                const newMember = { id: Date.now().toString(), ...formData, status: formData.role === 'Trial Moderator' ? 'Trial' : 'Active', language: 'English', joinedDate: formData.joinedDate, lastActiveDate: new Date().toISOString().split('T')[0], strikes: 0, strikeHistory: [], isOnLoa: false, weeklyTickets: 0, weeklyMessages: 0, totalTickets: 0, totalMessages: 0, notes: [], avatarUrl: getAvatarUrl(formData.name, formData.role) };
+                addStaff(newMember);
+            };
+            return (
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 animate-in fade-in">
+                    <div className="bg-gray-800 p-6 rounded-lg w-[500px] border border-gray-600">
+                        <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2"><UserPlus size={20}/> Onboard New Staff</h3>
+                        <div className="space-y-4">
+                            <div className="grid grid-cols-2 gap-4"><Input label="Username" required value={formData.name} onChange={v => setFormData({...formData, name: v})} /><Input label="Discord ID" required value={formData.discordId} onChange={v => setFormData({...formData, discordId: v})} /></div>
+                            <div className="grid grid-cols-2 gap-4"><div><label className="block text-gray-400 text-xs mb-1">Role</label><select className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white text-sm" value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})}>{Object.keys(ROLE_HIERARCHY).map(r => <option key={r} value={r}>{r}</option>)}</select></div><Input label="Join Date" type="date" value={formData.joinedDate} onChange={v => setFormData({...formData, joinedDate: v})} /></div>
+                            <div className="grid grid-cols-2 gap-4"><Input label="Country" value={formData.country} onChange={v => setFormData({...formData, country: v})} /><Input label="Timezone (e.g. EST, GMT)" value={formData.timezone} onChange={v => setFormData({...formData, timezone: v})} /></div>
+                        </div>
+                        <div className="flex justify-end gap-2 mt-6"><button onClick={() => setShowAddModal(false)} className="text-gray-400 px-4 py-2 text-sm hover:text-white">Cancel</button><button onClick={handleSubmit} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded text-sm">Onboard Staff</button></div>
+                    </div>
+                </div>
+            );
+        };
+
+        const SettingsView = ({ apiKeyInput, setApiKeyInput, saveApiKey, handleExport, handleImport }) => (
+            <div className="max-w-xl mx-auto mt-10 space-y-8">
+                <div className="bg-gray-800 p-6 rounded-lg border border-gray-700"><h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Key size={20} /> API Configuration</h3><p className="text-gray-400 text-sm mb-4">Your Gemini API Key is pre-loaded and secure.</p><div className="flex gap-2"><input type="password" value={apiKeyInput} onChange={e => setApiKeyInput(e.target.value)} className="flex-1 bg-gray-900 border border-gray-700 rounded p-2 text-white" placeholder="API Key" /><button onClick={saveApiKey} className="bg-green-600 text-white px-4 rounded text-sm">Update</button></div></div>
+                <div className="bg-gray-800 p-6 rounded-lg border border-gray-700"><h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Database size={20} /> Data Backup</h3><div className="flex gap-4"><button onClick={handleExport} className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2"><Download size={16}/> Export JSON</button><label className="bg-gray-700 text-white px-4 py-2 rounded flex items-center gap-2 cursor-pointer hover:bg-gray-600"><Upload size={16}/> Import JSON<input type="file" className="hidden" accept=".json" onChange={handleImport} /></label></div></div>
+            </div>
+        );
+
+        const StaffAdminTool = () => {
+            const [activeTab, setActiveTab] = useState('dashboard');
+            const [staff, setStaff] = useState(() => JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY)) || INITIAL_STAFF);
+            const [selectedStaffId, setSelectedStaffId] = useState(null);
+            const [showAddModal, setShowAddModal] = useState(false);
+            const [showReportModal, setShowReportModal] = useState(false);
+            const [showEndWeekModal, setShowEndWeekModal] = useState(false);
+            const [searchQuery, setSearchQuery] = useState("");
+            const [listModalConfig, setListModalConfig] = useState(null);
+            const [apiKeyInput, setApiKeyInput] = useState(() => localStorage.getItem(API_KEY_STORAGE_KEY) || DEFAULT_API_KEY);
+            const [deletingId, setDeletingId] = useState(null);
+
+            useEffect(() => { localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(staff)); }, [staff]);
+
+            const stats = useMemo(() => {
+                const activeStaff = staff.filter(s => s.status !== 'Alumni');
+                const regionCounts = { Americas: 0, EMEA: 0, APAC: 0, Oceania: 0, Unknown: 0 };
+                activeStaff.forEach(s => { regionCounts[getRegionFromTimezone(s.timezone, s.country)]++; });
+                return {
+                    total: activeStaff.length,
+                    loa: activeStaff.filter(s => s.isOnLoa).length,
+                    roleBreakdown: {
+                        cm: activeStaff.filter(s => s.role === 'Community Manager').length,
+                        sm: activeStaff.filter(s => s.role === 'Staff Manager').length,
+                        head: activeStaff.filter(s => s.role === 'Head of Moderation').length,
+                        mod: activeStaff.filter(s => s.role === 'Moderator').length,
+                        trial: activeStaff.filter(s => s.role === 'Trial Moderator').length,
+                    },
+                    pendingReview: activeStaff.filter(s => s.status === 'Trial' && calculateTimeInService(s.joinedDate).totalDays >= 14).length,
+                    atRisk: activeStaff.filter(s => s.strikes >= 2 || calculateTimeInService(s.lastActiveDate).totalDays > 7).length,
+                    regions: regionCounts
+                };
+            }, [staff]);
+
+            const selectedStaff = useMemo(() => staff.find(s => s.id === selectedStaffId), [staff, selectedStaffId]);
+            const filteredTimezones = GLOBAL_TIMEZONES.filter(item => item.country.toLowerCase().includes(searchQuery.toLowerCase()) || item.zone.toLowerCase().includes(searchQuery.toLowerCase()));
+
+            const addStaff = (member) => { setStaff([...staff, member]); setShowAddModal(false); };
+            const updateStaff = (updatedMember) => { setStaff(prevStaff => prevStaff.map(s => s.id === updatedMember.id ? updatedMember : s)); };
+            const deleteStaff = (id) => { setDeletingId(id); };
+            const archiveStaff = (id, reason, standing) => { const member = staff.find(s => s.id === id); if (!member) return; const archivedMember = { ...member, status: 'Alumni', exitDate: new Date().toISOString().split('T')[0], exitReason: reason, rehireEligible: standing, isOnLoa: false, loaReturnDate: undefined }; updateStaff(archivedMember); setSelectedStaffId(null); setActiveTab('alumni'); };
+            const checkAutomation = () => {
+                const today = new Date().toISOString().split('T')[0];
+                let automatedNotes = [];
+                let hasUpdates = false;
+                const updatedStaff = staff.map(s => {
+                    if (s.status === 'Alumni') return s;
+                    let newStatus = s.status;
+                    let newIsOnLoa = s.isOnLoa;
+                    let newLoaReturnDate = s.loaReturnDate;
+                    let newStrikeHistory = [...s.strikeHistory];
+                    let newNotes = [...s.notes];
+                    let changed = false;
+                    if (s.isOnLoa && s.loaReturnDate && today >= s.loaReturnDate) { newIsOnLoa = false; newStatus = 'Active'; newLoaReturnDate = undefined; newNotes.push({ id: Date.now(), date: today, author: 'System', content: 'Auto-return from LOA.' }); automatedNotes.push(`AUTO: ${s.name} returned from LOA.`); changed = true; }
+                    newStrikeHistory = newStrikeHistory.map(strike => { if (strike.active && strike.expiryDate && today >= strike.expiryDate) { automatedNotes.push(`AUTO: Strike Lvl ${strike.level} expired for ${s.name}.`); changed = true; return { ...strike, active: false }; } return strike; });
+                    const inactiveDays = calculateTimeInService(s.lastActiveDate).totalDays;
+                    const hasStrike = (lvl, reason) => newStrikeHistory.some(st => st.active && st.level === lvl && st.reason.includes(reason));
+                    if (!newIsOnLoa && s.role !== 'Community Manager') {
+                        if (inactiveDays >= 7 && !hasStrike(1, 'Inactive (7 Days)')) { const expiry = new Date(); expiry.setDate(new Date().getDate() + 30); newStrikeHistory.push({ date: today, expiryDate: expiry.toISOString().split('T')[0], level: 1, reason: 'Auto: Inactive (7 Days)', active: true }); newNotes.push({ id: Date.now() + 1, date: today, author: 'System', content: 'Issued Strike 1: Inactive > 7 Days' }); automatedNotes.push(`AUTO: Strike 1 issued to ${s.name} (7+ days inactive).`); changed = true; }
+                        if (inactiveDays >= 14 && !hasStrike(2, 'Inactive (14 Days)')) { const expiry = new Date(); expiry.setDate(new Date().getDate() + 60); newStrikeHistory.push({ date: today, expiryDate: expiry.toISOString().split('T')[0], level: 2, reason: 'Auto: Inactive (14 Days)', active: true }); newNotes.push({ id: Date.now() + 2, date: today, author: 'System', content: 'Issued Strike 2: Inactive > 14 Days' }); automatedNotes.push(`AUTO: Strike 2 issued to ${s.name} (14+ days inactive).`); changed = true; }
+                        if (inactiveDays >= 31 && !hasStrike(3, 'Inactive (31 Days)')) { const expiry = new Date(); expiry.setDate(new Date().getDate() + 90); newStrikeHistory.push({ date: today, expiryDate: expiry.toISOString().split('T')[0], level: 3, reason: 'Auto: Inactive (31 Days)', active: true }); newNotes.push({ id: Date.now() + 3, date: today, author: 'System', content: 'Issued Strike 3: Inactive > 31 Days' }); automatedNotes.push(`AUTO: Strike 3 issued to ${s.name} (31+ days inactive).`); changed = true; }
+                    }
+                    const newTotalStrikes = newStrikeHistory.filter(st => st.active).reduce((sum, st) => sum + st.level, 0);
+                    if (newTotalStrikes !== s.strikes) changed = true;
+                    if (!newIsOnLoa && s.role !== 'Community Manager') { if (inactiveDays > 14) { if (newStatus !== 'Inactive') { newStatus = 'Inactive'; changed = true; } } else if (inactiveDays <= 7 && s.status === 'Inactive') { newStatus = 'Active'; changed = true; } }
+                    if (changed) { hasUpdates = true; return { ...s, status: newStatus, isOnLoa: newIsOnLoa, loaReturnDate: newLoaReturnDate, strikeHistory: newStrikeHistory, strikes: newTotalStrikes, notes: newNotes }; }
+                    return s;
+                });
+                if (hasUpdates) setStaff(updatedStaff);
+                alert(automatedNotes.length > 0 ? `Automation Run:\n${automatedNotes.join('\n')}` : 'Automation Run: No changes needed.');
+            };
+
+            const resetWeeklyActivity = () => {
+                setShowEndWeekModal(true);
+            };
+
+            const saveApiKey = () => { localStorage.setItem(API_KEY_STORAGE_KEY, apiKeyInput); alert("API Key saved securely."); };
+            const handleExport = () => { const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(staff, null, 2)); const anchor = document.createElement('a'); anchor.href = dataStr; anchor.download = `rescue_ops_backup_${new Date().toISOString().split('T')[0]}.json`; document.body.appendChild(anchor); anchor.click(); anchor.remove(); };
+            const handleImport = (event) => { const fileReader = new FileReader(); if (event.target.files && event.target.files[0]) { fileReader.readAsText(event.target.files[0], "UTF-8"); fileReader.onload = e => { try { const parsed = JSON.parse(e.target.result); if (Array.isArray(parsed)) { setStaff(parsed); alert("Database restored!"); } } catch(err) { alert("Invalid file."); } }; } };
+
+            return (
+                <div className="flex h-screen overflow-hidden">
+                    <aside className="w-64 bg-gray-800 border-r border-gray-700 flex flex-col">
+                        <div className="p-6 border-b border-gray-700"><h1 className="text-red-500 font-bold flex items-center gap-2"><Shield /> ADMIN CONSOLE</h1><p className="text-xs text-gray-500 mt-1 uppercase tracking-widest">Rescue Ops: Wildfire</p></div>
+                        <nav className="p-4 space-y-2 flex-1">
+                            <button onClick={() => {setActiveTab('dashboard'); setSelectedStaffId(null);}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium ${activeTab==='dashboard'?'bg-blue-900/20 text-blue-400 border border-blue-900/50':'text-gray-400 hover:text-white hover:bg-gray-700'}`}><BarChart3 size={20}/> Dashboard</button>
+                            <button onClick={() => {setActiveTab('roster'); setSelectedStaffId(null);}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium ${activeTab==='roster'?'bg-blue-900/20 text-blue-400 border border-blue-900/50':'text-gray-400 hover:text-white hover:bg-gray-700'}`}><Users size={20}/> Roster</button>
+                            
+                            {/* New Templates Tab */}
+                            <button onClick={() => {setActiveTab('templates'); setSelectedStaffId(null);}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium ${activeTab==='templates'?'bg-blue-900/20 text-blue-400 border border-blue-900/50':'text-gray-400 hover:text-white hover:bg-gray-700'}`}><MessageSquare size={20}/> Templates</button>
+                            
+                            <button onClick={() => {setActiveTab('handbook'); setSelectedStaffId(null);}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium ${activeTab==='handbook'?'bg-blue-900/20 text-blue-400 border border-blue-900/50':'text-gray-400 hover:text-white hover:bg-gray-700'}`}><BookOpen size={20}/> Handbook</button>
+                            <button onClick={() => {setActiveTab('alumni'); setSelectedStaffId(null);}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium ${activeTab==='alumni'?'bg-blue-900/20 text-blue-400 border border-blue-900/50':'text-gray-400 hover:text-white hover:bg-gray-700'}`}><Archive size={20}/> Alumni</button>
+                            <div className="pt-4 mt-4 border-t border-gray-700">
+                                <button onClick={() => setShowAddModal(true)} className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-gray-700"><UserPlus size={20}/> Add Staff</button>
+                                <button onClick={() => {setActiveTab('settings'); setSelectedStaffId(null);}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium ${activeTab==='settings'?'bg-blue-900/20 text-blue-400 border border-blue-900/50':'text-gray-400 hover:text-white hover:bg-gray-700'}`}><Settings size={20}/> Settings</button>
+                            </div>
+                        </nav>
+                    </aside>
+                    <main className="flex-1 bg-gray-900 flex flex-col overflow-hidden">
+                        <header className="h-16 bg-gray-900 border-b border-gray-700 flex items-center justify-between px-6"><h2 className="text-xl font-bold text-white capitalize">{activeTab === 'profile' ? 'Staff Profile' : activeTab}</h2><div className="flex items-center gap-4"><div className="text-right"><div className="text-sm font-bold text-white">Staff Manager</div><div className="text-xs text-purple-400">Admin</div></div><div className="w-10 h-10 rounded-full bg-purple-900 flex items-center justify-center font-bold text-purple-200">SM</div></div></header>
+                        <div className="flex-1 overflow-auto p-6">
+                            {activeTab === 'dashboard' && <Dashboard staff={staff} stats={stats} setSelectedStaffId={setSelectedStaffId} setActiveTab={setActiveTab} setShowReportModal={setShowReportModal} filteredTimezones={filteredTimezones} searchQuery={searchQuery} setSearchQuery={setSearchQuery} listModalConfig={listModalConfig} setListModalConfig={setListModalConfig} />}
+                            {activeTab === 'roster' && <Roster staff={staff} setSelectedStaffId={setSelectedStaffId} setActiveTab={setActiveTab} setShowAddModal={setShowAddModal} checkAutomation={checkAutomation} onEndWeek={resetWeeklyActivity} />}
+                            
+                            {/* New Templates Render */}
+                            {activeTab === 'templates' && <TemplatesView staff={staff} />}
+                            
+                            {activeTab === 'handbook' && <Handbook />}
+                            {activeTab === 'alumni' && <AlumniView staff={staff} setSelectedStaffId={setSelectedStaffId} setActiveTab={setActiveTab} />}
+                            {activeTab === 'settings' && <SettingsView apiKeyInput={apiKeyInput} setApiKeyInput={setApiKeyInput} saveApiKey={saveApiKey} handleExport={handleExport} handleImport={handleImport} />}
+                            {activeTab === 'profile' && <ProfileView selectedStaff={selectedStaff} updateStaff={updateStaff} archiveStaff={archiveStaff} deleteStaff={deleteStaff} key={selectedStaff ? selectedStaff.id : 'profile'} />}
+                        </div>
+                    </main>
+                    {showAddModal && <AddStaffModal addStaff={addStaff} setShowAddModal={setShowAddModal} />}
+                    {showReportModal && <ReportModal onClose={() => setShowReportModal(false)} />}
+                    {showEndWeekModal && <EndWeekModal staff={staff} setStaff={setStaff} onClose={() => setShowEndWeekModal(false)} />}
+                    {deletingId && <DeleteProfileModal 
+                        staffMember={staff.find(s => s.id === deletingId)}
+                        onDelete={() => {
+                            setStaff(prev => prev.filter(s => s.id !== deletingId));
+                            setSelectedStaffId(null);
+                            setActiveTab('roster');
+                            setDeletingId(null);
+                        }}
+                        onClose={() => setDeletingId(null)}
+                    />}
+                </div>
+            );
+        };
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<StaffAdminTool />);
+    </script>
+</body>
+</html>
